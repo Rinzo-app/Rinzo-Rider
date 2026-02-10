@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Saaf Rider",
-    "slug": "saaf-rider",
+    "name": "Rinzo Rider",
+    "slug": "rinzo-rider",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "saafrider",
+    "scheme": "rinzorider",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.saaf.rider"
+      "bundleIdentifier": "com.rinzo.rider"
     },
     "android": {
-      "package": "com.saaf.rider",
+      "package": "com.rinzo.rider",
       "adaptiveIcon": {
         "backgroundColor": "#0D0F14",
         "foregroundImage": "./assets/images/icon.png"
@@ -31,7 +31,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://rinzo.app"
         }
       ],
       "expo-font",
@@ -40,6 +40,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://rinzo.app"
+      },
+      "eas": {
+        "projectId": "c89509ff-82fc-47be-a565-ff922aa1c00d"
+      }
     }
   }
 }
