@@ -6,21 +6,17 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "environment": "production",
       "android": {
         "buildType": "apk"
       },
       "ios": {
         "simulator": true
-      },
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.rinzo.app"
       }
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.rinzo.app"
-      }
+      "environment": "production"
     }
   }
 }
