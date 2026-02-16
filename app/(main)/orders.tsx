@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -9,11 +9,12 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { api, Order, OrderStatus } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { Order, OrderStatus, fetchRiderOrders } from "@/lib/api";
 import Colors from "@/constants/colors";
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string }> = {
@@ -89,32 +90,19 @@ function OrderCard({ order }: { order: Order }) {
 
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
-  const fetchOrders = useCallback(async () => {
-    try {
-      const data = await api.getOrders();
-      setOrders(data);
-    } catch {
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchOrders();
-    }, [fetchOrders])
-  );
-
-  async function handleRefresh() {
-    setIsRefreshing(true);
-    await fetchOrders();
-  }
+  const {
+    data: orders = [],
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useQuery<Order[]>({
+    queryKey: ["rider-orders"],
+    queryFn: fetchRiderOrders,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
 
   function renderEmpty() {
     if (isLoading) return null;
@@ -149,8 +137,8 @@ export default function OrdersScreen() {
           ListEmptyComponent={renderEmpty}
           refreshControl={
             <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
+              refreshing={isRefetching}
+              onRefresh={() => refetch()}
               tintColor={Colors.dark.tint}
               colors={[Colors.dark.tint]}
             />

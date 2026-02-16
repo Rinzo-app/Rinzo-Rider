@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,21 @@ import {
   ActivityIndicator,
   Modal,
   Linking,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { api, Order, OrderStatus } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Order,
+  OrderStatus,
+  fetchOrder,
+  advanceOrder,
+  BACKEND_NEXT_ACTION,
+  ApiError,
+} from "@/lib/api";
 import Colors from "@/constants/colors";
 
 const STATUS_STEPS: { key: OrderStatus; label: string; icon: string }[] = [
@@ -23,34 +32,54 @@ const STATUS_STEPS: { key: OrderStatus; label: string; icon: string }[] = [
   { key: "DELIVERED", label: "Delivered", icon: "checkmark-circle" },
 ];
 
-const NEXT_ACTION: Record<OrderStatus, { label: string; nextStatus: OrderStatus } | null> = {
-  ASSIGNED: { label: "Mark as Picked Up", nextStatus: "PICKED_UP" },
-  PICKED_UP: { label: "Mark as Delivered", nextStatus: "DELIVERED" },
-  DELIVERED: null,
-};
-
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const [order, setOrder] = useState<Order | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showConfirm, setShowConfirm] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
-  useEffect(() => {
-    loadOrder();
-  }, [id]);
+  const {
+    data: order,
+    isLoading,
+    isError,
+  } = useQuery<Order>({
+    queryKey: ["order", id],
+    queryFn: () => fetchOrder(id!),
+    enabled: !!id,
+    staleTime: 15_000,           // order status is time-critical
+    refetchInterval: 30_000,     // poll while viewing
+  });
 
-  async function loadOrder() {
-    try {
-      const data = await api.getOrderById(id);
-      setOrder(data);
-    } catch {
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const mutation = useMutation({
+    mutationFn: () => advanceOrder(id!, order!.backendStatus),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order", id] });
+      queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+      setShowConfirm(false);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      // Navigate back after delivery or dropoff completes (order leaves active list)
+      if (
+        order?.backendStatus === "OUT_FOR_DELIVERY" ||
+        order?.backendStatus === "PICKED_UP_FROM_CUSTOMER"
+      ) {
+        setTimeout(() => router.back(), 500);
+      }
+    },
+    onError: (err) => {
+      setShowConfirm(false);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      const message =
+        err instanceof ApiError ? err.message : "Something went wrong";
+      Alert.alert("Error", message);
+    },
+  });
+
+  const isUpdating = mutation.isPending;
 
   function handleCall(phone: string) {
     if (Platform.OS !== "web") {
@@ -61,27 +90,7 @@ export default function OrderDetailScreen() {
 
   async function handleStatusUpdate() {
     if (!order) return;
-    const action = NEXT_ACTION[order.status];
-    if (!action) return;
-
-    setIsUpdating(true);
-    try {
-      const updated = await api.updateOrderStatus(order.id, action.nextStatus);
-      setOrder(updated);
-      setShowConfirm(false);
-      if (Platform.OS !== "web") {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      if (action.nextStatus === "DELIVERED") {
-        setTimeout(() => router.back(), 500);
-      }
-    } catch {
-      if (Platform.OS !== "web") {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }
-    } finally {
-      setIsUpdating(false);
-    }
+    mutation.mutate();
   }
 
   function getStatusIndex(status: OrderStatus): number {
@@ -96,7 +105,7 @@ export default function OrderDetailScreen() {
     );
   }
 
-  if (!order) {
+  if (!order || isError) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top + webTopInset }]}>
         <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.textMuted} />
@@ -109,7 +118,7 @@ export default function OrderDetailScreen() {
   }
 
   const currentStepIndex = getStatusIndex(order.status);
-  const nextAction = NEXT_ACTION[order.status];
+  const nextAction = BACKEND_NEXT_ACTION[order.backendStatus] || null;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
@@ -302,22 +311,16 @@ export default function OrderDetailScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalIconWrap}>
               <Ionicons
-                name={
-                  order.status === "ASSIGNED"
-                    ? "cube-outline"
-                    : "checkmark-circle-outline"
-                }
+                name={(nextAction?.icon || "checkmark-circle-outline") as any}
                 size={40}
                 color={Colors.dark.tint}
               />
             </View>
             <Text style={styles.modalTitle}>
-              {order.status === "ASSIGNED" ? "Confirm Pickup" : "Confirm Delivery"}
+              {nextAction?.modalTitle || "Confirm"}
             </Text>
             <Text style={styles.modalSubtitle}>
-              {order.status === "ASSIGNED"
-                ? "Have you picked up the order from the shop?"
-                : "Has the order been delivered to the customer?"}
+              {nextAction?.modalSubtitle || "Are you sure?"}
             </Text>
             <View style={styles.modalActions}>
               <Pressable

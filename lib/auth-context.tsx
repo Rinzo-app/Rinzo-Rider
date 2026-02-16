@@ -1,53 +1,275 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
-import { api, RiderProfile } from "@/lib/api";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  ReactNode,
+} from "react";
+import { AppState, AppStateStatus } from "react-native";
+import { fetch } from "expo/fetch";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { isFirebaseConfigured, firebaseReady, getFirebaseAuth } from "./firebase";
+import { queryClient } from "./query-client";
+import { BACKEND_URL } from "./config";
+import type { RiderProfile } from "@/lib/api";
+import { fetchRiderProfile as fetchRiderProfileFromApi } from "@/lib/api";
+import { ConfigErrorScreen } from "@/components/ConfigErrorScreen";
+
+// ── Startup config validation ────────────────────────────
+// Check once at module level so the error screen is deterministic
+// and doesn't depend on render timing.
+const isBackendUrlConfigured =
+  !!BACKEND_URL && BACKEND_URL !== "" && BACKEND_URL !== "undefined";
+
+function getConfigError(): string | null {
+  if (!isFirebaseConfigured && !isBackendUrlConfigured) {
+    return "The app is missing both Firebase and backend server configuration. Please contact support or try updating the app.";
+  }
+  if (!isFirebaseConfigured) {
+    return "The app's authentication service is not configured. You won't be able to sign in until this is resolved. Please contact support.";
+  }
+  if (!isBackendUrlConfigured) {
+    return "The app cannot connect to the Rinzo server because the server address is not configured. Please contact support or try updating the app.";
+  }
+  return null;
+}
+
+const CONFIG_ERROR = getConfigError();
 
 interface AuthContextValue {
   rider: RiderProfile | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Non-null when the backend profile fetch failed after login */
+  profileError: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  /** Retry fetching the profile after a failure */
+  retryProfileFetch: () => Promise<void>;
   updateRider: (rider: RiderProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Auto-register with the unified backend on first login.
+ * 409 = already registered — safe to ignore.
+ */
+async function registerWithBackend(idToken: string, user: any) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/register/rider`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        name: user.displayName || user.email?.split("@")[0] || "Rider",
+        email: user.email || "",
+        phone: user.phoneNumber || "",
+        vehicleType: "Motorcycle",
+      }),
+    });
+    if (!res.ok && res.status !== 409) {
+      console.warn("Backend rider registration:", res.status);
+    }
+  } catch (err) {
+    // Non-fatal — user may already be registered
+    console.warn("Backend rider registration failed (non-fatal):", err);
+  }
+}
+
+/**
+ * Build a minimal RiderProfile from the Firebase user.
+ * Used only as a placeholder while the real profile is being fetched
+ * from the backend. The status is set to a safe "PENDING" default
+ * so that the status gate blocks access until the backend responds.
+ */
+function buildPlaceholderProfile(firebaseUser: any): RiderProfile {
+  return {
+    id: firebaseUser.uid,
+    name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Rider",
+    email: firebaseUser.email || "",
+    phone: firebaseUser.phoneNumber || "",
+    status: "PENDING", // safe default — backend will override
+    vehicleType: "Motorcycle",
+    vehicleNumber: "",
+    availability: "OFFLINE",
+    joinedDate: firebaseUser.metadata?.creationTime || new Date().toISOString(),
+    totalDeliveries: 0,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // ── If critical config is missing, short-circuit with a friendly screen ──
+  if (CONFIG_ERROR) {
+    return <ConfigErrorScreen message={CONFIG_ERROR} />;
+  }
+
+  return <AuthProviderInner>{children}</AuthProviderInner>;
+}
+
+/** Inner provider — only rendered when all config is present. */
+function AuthProviderInner({ children }: { children: ReactNode }) {
   const [rider, setRider] = useState<RiderProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const appState = useRef(AppState.currentState);
 
-  useEffect(() => {
-    checkAuth();
+  // ── Fetch the real rider profile from the backend ──────
+  const syncProfileFromBackend = useCallback(async () => {
+    try {
+      setProfileError(null);
+      const profile = await fetchRiderProfileFromApi();
+      setRider(profile);
+      return profile;
+    } catch (err: any) {
+      const message =
+        err?.message || "Failed to load your rider profile. Please try again.";
+      console.error("Backend profile fetch failed:", message);
+      setProfileError(message);
+      return null;
+    }
   }, []);
 
-  async function checkAuth() {
-    try {
-      const token = await api.getToken();
-      if (token) {
-        const profile = await api.getProfile();
-        setRider(profile);
-      }
-    } catch {
-      setRider(null);
-    } finally {
+  // ── Bootstrap: listen to Firebase auth state ───────────
+  useEffect(() => {
+    if (!isFirebaseConfigured) {
       setIsLoading(false);
+      return;
+    }
+
+    let unsubscribe: (() => void) | undefined;
+
+    firebaseReady
+      .then(async () => {
+        const auth = getFirebaseAuth();
+        if (!auth) {
+          setIsLoading(false);
+          return;
+        }
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser: any) => {
+          if (firebaseUser) {
+            // Set a safe placeholder while the backend profile loads
+            setRider(buildPlaceholderProfile(firebaseUser));
+            // Fetch the real profile from backend
+            await syncProfileFromBackend();
+          } else {
+            setRider(null);
+            setProfileError(null);
+          }
+          setIsLoading(false);
+        });
+      })
+      .catch(() => {
+        setIsLoading(false);
+      });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [syncProfileFromBackend]);
+
+  // ── AppState listener: refetch profile on foreground ───
+  useEffect(() => {
+    function handleAppStateChange(nextState: AppStateStatus) {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextState === "active" &&
+        rider
+      ) {
+        // App came to foreground — silently sync the profile
+        syncProfileFromBackend();
+      }
+      appState.current = nextState;
+    }
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => subscription.remove();
+  }, [rider, syncProfileFromBackend]);
+
+  // ── Email / password sign-in ────────────────────────────
+  async function login(email: string, password: string) {
+    setIsLoading(true);
+    setProfileError(null);
+    try {
+      await firebaseReady;
+      const auth = getFirebaseAuth();
+
+      if (!auth) {
+        throw new Error(
+          "Unable to initialise the sign-in service. Please try again later or contact support.",
+        );
+      }
+
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+
+      // Obtain the ID token immediately and register with backend
+      const idToken = await cred.user.getIdToken();
+      await registerWithBackend(idToken, cred.user);
+
+      // Fetch the real rider profile from the backend
+      // (onAuthStateChanged also fires, but we fetch here to
+      //  ensure the profile is ready before login() resolves)
+      await syncProfileFromBackend();
+    } catch (err: any) {
+      setIsLoading(false);
+      const code = err?.code || "";
+      if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+        throw new Error("Invalid email or password");
+      } else if (code === "auth/user-not-found") {
+        throw new Error("No account found with this email");
+      } else if (code === "auth/too-many-requests") {
+        throw new Error("Too many attempts. Please try again later");
+      } else if (code === "auth/invalid-email") {
+        throw new Error("Please enter a valid email");
+      } else if (code === "auth/network-request-failed") {
+        throw new Error("Network error. Please check your connection and try again");
+      }
+      // Re-throw our own friendly messages as-is
+      if (err?.message?.startsWith("Unable to initialise")) {
+        throw err;
+      }
+      throw new Error("Sign in failed. Please try again");
     }
   }
 
-  async function login(email: string, password: string) {
-    const result = await api.login(email, password);
-    setRider(result.rider);
-  }
-
+  // ── Sign out ───────────────────────────────────────────
   async function logout() {
-    await api.logout();
-    setRider(null);
+    try {
+      if (isFirebaseConfigured) {
+        await firebaseReady;
+        const auth = getFirebaseAuth();
+        if (auth) {
+          await signOut(auth);
+        }
+      }
+      setRider(null);
+      setProfileError(null);
+      queryClient.clear();
+    } catch (err) {
+      console.error("Sign out error:", err);
+    }
   }
 
+  /** Refresh the rider profile from the backend */
   async function refreshProfile() {
-    const profile = await api.getProfile();
-    setRider(profile);
+    await syncProfileFromBackend();
+  }
+
+  /** Retry fetching the profile after a failure */
+  async function retryProfileFetch() {
+    setIsLoading(true);
+    setProfileError(null);
+    try {
+      await syncProfileFromBackend();
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function updateRider(updated: RiderProfile) {
@@ -59,12 +281,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       rider,
       isLoading,
       isAuthenticated: !!rider,
+      profileError,
       login,
       logout,
       refreshProfile,
+      retryProfileFetch,
       updateRider,
     }),
-    [rider, isLoading]
+    [rider, isLoading, profileError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

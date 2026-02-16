@@ -1,12 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { request, ApiError } from "./http-client";
 
-const STORAGE_KEYS = {
-  AUTH_TOKEN: "saaf_auth_token",
-  RIDER_PROFILE: "saaf_rider_profile",
-  RIDER_AVAILABILITY: "saaf_rider_availability",
-  ORDERS: "saaf_orders",
-  DISPUTES: "saaf_disputes",
-};
+// Re-export so existing consumers don't break
+export { ApiError } from "./http-client";
 
 export type RiderStatus = "PENDING" | "APPROVED" | "ACTIVE" | "SUSPENDED";
 export type AvailabilityStatus = "AVAILABLE" | "OFFLINE";
@@ -36,6 +31,8 @@ export interface Order {
   customerAddress: string;
   type: "PICKUP" | "DELIVERY";
   status: OrderStatus;
+  /** Raw backend status — used to determine which mutation endpoint to call */
+  backendStatus: string;
   distance: string;
   services: ServiceItem[];
   createdAt: string;
@@ -52,223 +49,264 @@ export interface Dispute {
   orderId?: string;
   description: string;
   status: DisputeStatus;
+  resolution?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export const DISPUTE_CATEGORIES = [
   "Payment Issue",
-  "Customer Not Available",
-  "Wrong Address",
+  "Late Delivery",
+  "Wrong Items",
   "Order Damaged",
-  "Shop Issue",
+  "Missing Items",
+  "Customer No-show",
+  "Wrong Order Info",
+  "Rider Issue",
   "App Issue",
   "Other",
 ];
 
-const MOCK_RIDER: RiderProfile = {
-  id: "RDR-001",
-  name: "Ahmed Khan",
-  email: "ahmed@saaf.pk",
-  phone: "+92 300 1234567",
-  status: "ACTIVE",
-  vehicleType: "Motorcycle",
-  vehicleNumber: "LHR-4521",
-  availability: "OFFLINE",
-  joinedDate: "2025-11-15",
-  totalDeliveries: 142,
-};
+// ── Backend → UI status mapping ──────────────────────────
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: "ORD-7842",
-    shopName: "CleanPress Laundry",
-    shopPhone: "+92 321 9876543",
-    shopAddress: "Shop 12, Block C, Gulberg III, Lahore",
-    customerName: "Sara Ali",
-    customerPhone: "+92 333 4567890",
-    customerAddress: "House 45, Street 7, DHA Phase 5, Lahore",
-    type: "PICKUP",
-    status: "ASSIGNED",
-    distance: "3.2 km",
-    services: [
-      { name: "Wash & Fold", quantity: 5 },
-      { name: "Dry Clean", quantity: 2 },
-    ],
-    createdAt: "2026-02-08T10:30:00Z",
-  },
-  {
-    id: "ORD-7839",
-    shopName: "Fresh & Clean",
-    shopPhone: "+92 322 1112233",
-    shopAddress: "Plaza 8, Main Boulevard, Johar Town, Lahore",
-    customerName: "Usman Tariq",
-    customerPhone: "+92 311 9998877",
-    customerAddress: "Flat 3B, Tower A, Lake City, Lahore",
-    type: "DELIVERY",
-    status: "PICKED_UP",
-    distance: "5.8 km",
-    services: [
-      { name: "Ironing", quantity: 8 },
-      { name: "Stain Removal", quantity: 1 },
-    ],
-    createdAt: "2026-02-08T09:15:00Z",
-  },
-  {
-    id: "ORD-7835",
-    shopName: "Sparkle Dry Cleaners",
-    shopPhone: "+92 300 5556677",
-    shopAddress: "2nd Floor, Liberty Market, Lahore",
-    customerName: "Fatima Noor",
-    customerPhone: "+92 345 6543210",
-    customerAddress: "House 112, Model Town Extension, Lahore",
-    type: "PICKUP",
-    status: "ASSIGNED",
-    distance: "2.1 km",
-    services: [
-      { name: "Wash & Iron", quantity: 3 },
-    ],
-    createdAt: "2026-02-08T08:45:00Z",
-  },
-];
-
-const MOCK_DISPUTES: Dispute[] = [
-  {
-    id: "DSP-201",
-    category: "Customer Not Available",
-    orderId: "ORD-7801",
-    description: "Customer did not answer the door or phone after waiting 15 minutes.",
-    status: "RESOLVED",
-    createdAt: "2026-02-05T14:20:00Z",
-    updatedAt: "2026-02-06T09:30:00Z",
-  },
-  {
-    id: "DSP-198",
-    category: "Wrong Address",
-    orderId: "ORD-7790",
-    description: "The address on the order does not exist. Pin location was in an empty plot.",
-    status: "CLOSED",
-    createdAt: "2026-02-03T11:00:00Z",
-    updatedAt: "2026-02-04T16:45:00Z",
-  },
-];
-
-async function initializeMockData() {
-  const existingOrders = await AsyncStorage.getItem(STORAGE_KEYS.ORDERS);
-  if (!existingOrders) {
-    await AsyncStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(MOCK_ORDERS));
+function deriveType(backendStatus: string): "PICKUP" | "DELIVERY" {
+  if (
+    backendStatus === "PICKUP_ASSIGNED" ||
+    backendStatus === "PICKED_UP_FROM_CUSTOMER" ||
+    backendStatus === "AT_SHOP"
+  ) {
+    return "PICKUP";
   }
-  const existingDisputes = await AsyncStorage.getItem(STORAGE_KEYS.DISPUTES);
-  if (!existingDisputes) {
-    await AsyncStorage.setItem(STORAGE_KEYS.DISPUTES, JSON.stringify(MOCK_DISPUTES));
+  return "DELIVERY";
+}
+
+function deriveStatus(backendStatus: string): OrderStatus {
+  switch (backendStatus) {
+    case "PICKUP_ASSIGNED":
+      return "ASSIGNED";
+    case "PICKED_UP_FROM_CUSTOMER":
+      return "PICKED_UP";
+    case "AT_SHOP":
+      return "DELIVERED"; // pickup leg completed
+    case "OUT_FOR_DELIVERY":
+      return "ASSIGNED";
+    case "DELIVERED":
+      return "DELIVERED";
+    default:
+      return "ASSIGNED";
   }
 }
 
-export const api = {
-  async login(email: string, password: string): Promise<{ token: string; rider: RiderProfile }> {
-    await new Promise((r) => setTimeout(r, 800));
-    if (!email || !password) {
-      throw new Error("Email and password are required");
-    }
-    const token = "mock_token_" + Date.now().toString();
-    await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
-    await AsyncStorage.setItem(STORAGE_KEYS.RIDER_PROFILE, JSON.stringify(MOCK_RIDER));
-    await initializeMockData();
-    return { token, rider: MOCK_RIDER };
+/** Backend order statuses where the rider has active work to do */
+const ACTIVE_BACKEND_STATUSES = [
+  "PICKUP_ASSIGNED",
+  "PICKED_UP_FROM_CUSTOMER",
+  "OUT_FOR_DELIVERY",
+];
+
+function mapOrder(raw: any): Order {
+  const backendStatus = raw.status as string;
+
+  // items can come from jsonb column or joined orderItems — both have serviceName & quantity
+  const items: ServiceItem[] = Array.isArray(raw.items)
+    ? raw.items.map((i: any) => ({
+        name: i.serviceName || i.name || "Service",
+        quantity: i.quantity,
+      }))
+    : [];
+
+  return {
+    id: raw.id,
+    shopName: raw.shopName || "Laundry Shop",
+    shopPhone: raw.shopPhone || "",
+    shopAddress: raw.shopAddress || raw.deliveryAddress || "",
+    customerName: raw.customerName || "Customer",
+    customerPhone: raw.customerPhone || "",
+    customerAddress: raw.customerAddress || raw.pickupAddress || "",
+    type: deriveType(backendStatus),
+    status: deriveStatus(backendStatus),
+    backendStatus,
+    distance: raw.distance || "",
+    services: items,
+    createdAt: raw.createdAt,
+  };
+}
+
+// ── Real backend order APIs ──────────────────────────────
+
+/** GET /api/rider/orders — active orders only (filters out completed) */
+export async function fetchRiderOrders(): Promise<Order[]> {
+  const res = await request<{ data: any[] }>("GET", "/api/rider/orders?limit=100");
+  return res.data
+    .filter((o) => ACTIVE_BACKEND_STATUSES.includes(o.status))
+    .map(mapOrder);
+}
+
+/** GET /api/rider/orders — ALL orders (including completed). Used by dispute form. */
+export async function fetchAllRiderOrders(): Promise<Order[]> {
+  const res = await request<{ data: any[] }>("GET", "/api/rider/orders?limit=200");
+  return res.data.map(mapOrder);
+}
+
+/** GET /api/orders/:id — single order with items */
+export async function fetchOrder(id: string): Promise<Order> {
+  const data = await request("GET", `/api/orders/${id}`);
+  return mapOrder(data);
+}
+
+/** POST /api/rider/orders/:id/pickup  (PICKUP_ASSIGNED → PICKED_UP_FROM_CUSTOMER) */
+export async function markPickup(id: string): Promise<Order> {
+  const data = await request("POST", `/api/rider/orders/${id}/pickup`);
+  return mapOrder(data);
+}
+
+/** POST /api/rider/orders/:id/dropoff  (PICKED_UP_FROM_CUSTOMER → AT_SHOP) */
+export async function markDropoff(id: string): Promise<Order> {
+  const data = await request("POST", `/api/rider/orders/${id}/dropoff`);
+  return mapOrder(data);
+}
+
+/** POST /api/rider/orders/:id/deliver  (OUT_FOR_DELIVERY → DELIVERED) */
+export async function markDelivery(id: string): Promise<Order> {
+  const data = await request("POST", `/api/rider/orders/${id}/deliver`);
+  return mapOrder(data);
+}
+
+// ── Rider profile API ────────────────────────────────────
+
+/** GET /api/rider/profile — fetch rider's real profile from backend */
+export async function fetchRiderProfile(): Promise<RiderProfile> {
+  const data = await request<any>("GET", "/api/rider/profile");
+  return {
+    id: data.id,
+    name: data.name || "",
+    email: data.email || "",
+    phone: data.phone || "",
+    status: data.status || "PENDING",
+    vehicleType: data.vehicleType || "Motorcycle",
+    vehicleNumber: data.vehicleNumber || "",
+    availability: data.availability || "OFFLINE",
+    joinedDate: data.joinedDate || new Date().toISOString(),
+    totalDeliveries: data.totalDeliveries ?? 0,
+  };
+}
+
+// ── Rider availability API ───────────────────────────────
+
+/** POST /api/rider/availability — toggle rider online/offline */
+export async function setAvailability(isAvailable: boolean): Promise<any> {
+  return request("POST", "/api/rider/availability", { isAvailable });
+}
+
+/** POST /api/rider/location — send rider GPS coordinates */
+export async function updateLocation(lat: number, lng: number): Promise<any> {
+  return request("POST", "/api/rider/location", { lat, lng });
+}
+
+/**
+ * Advance an order to the next status — dispatches to the correct backend
+ * endpoint based on the current backendStatus.
+ */
+export async function advanceOrder(
+  id: string,
+  backendStatus: string,
+): Promise<Order> {
+  switch (backendStatus) {
+    case "PICKUP_ASSIGNED":
+      return markPickup(id);
+    case "PICKED_UP_FROM_CUSTOMER":
+      return markDropoff(id);
+    case "OUT_FOR_DELIVERY":
+      return markDelivery(id);
+    default:
+      throw new ApiError(409, "No action available for this order status");
+  }
+}
+
+/** Next-action metadata keyed by backend status (for the detail screen) */
+export const BACKEND_NEXT_ACTION: Record<
+  string,
+  { label: string; modalTitle: string; modalSubtitle: string; icon: string } | null
+> = {
+  PICKUP_ASSIGNED: {
+    label: "Mark as Picked Up",
+    modalTitle: "Confirm Pickup",
+    modalSubtitle: "Have you picked up the order?",
+    icon: "cube-outline",
   },
-
-  async getProfile(): Promise<RiderProfile> {
-    await new Promise((r) => setTimeout(r, 300));
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.RIDER_PROFILE);
-    if (stored) return JSON.parse(stored);
-    return MOCK_RIDER;
+  PICKED_UP_FROM_CUSTOMER: {
+    label: "Mark as Dropped Off",
+    modalTitle: "Confirm Drop-off",
+    modalSubtitle: "Have you dropped off the order at the shop?",
+    icon: "storefront-outline",
   },
-
-  async updateAvailability(status: AvailabilityStatus): Promise<RiderProfile> {
-    await new Promise((r) => setTimeout(r, 400));
-    const profile = await api.getProfile();
-    const updated = { ...profile, availability: status };
-    await AsyncStorage.setItem(STORAGE_KEYS.RIDER_PROFILE, JSON.stringify(updated));
-    return updated;
-  },
-
-  async getOrders(): Promise<Order[]> {
-    await new Promise((r) => setTimeout(r, 400));
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.ORDERS);
-    if (stored) {
-      const orders: Order[] = JSON.parse(stored);
-      return orders.filter((o) => o.status !== "DELIVERED");
-    }
-    return MOCK_ORDERS;
-  },
-
-  async getOrderById(id: string): Promise<Order | null> {
-    await new Promise((r) => setTimeout(r, 300));
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.ORDERS);
-    if (stored) {
-      const orders: Order[] = JSON.parse(stored);
-      return orders.find((o) => o.id === id) || null;
-    }
-    return MOCK_ORDERS.find((o) => o.id === id) || null;
-  },
-
-  async updateOrderStatus(id: string, status: OrderStatus): Promise<Order> {
-    await new Promise((r) => setTimeout(r, 500));
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.ORDERS);
-    const orders: Order[] = stored ? JSON.parse(stored) : MOCK_ORDERS;
-    const idx = orders.findIndex((o) => o.id === id);
-    if (idx === -1) throw new Error("Order not found");
-
-    const order = orders[idx];
-    const validTransitions: Record<OrderStatus, OrderStatus | null> = {
-      ASSIGNED: "PICKED_UP",
-      PICKED_UP: "DELIVERED",
-      DELIVERED: null,
-    };
-    if (validTransitions[order.status] !== status) {
-      throw new Error("Invalid status transition");
-    }
-
-    orders[idx] = { ...order, status };
-    await AsyncStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-    return orders[idx];
-  },
-
-  async getDisputes(): Promise<Dispute[]> {
-    await new Promise((r) => setTimeout(r, 400));
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.DISPUTES);
-    if (stored) return JSON.parse(stored);
-    return MOCK_DISPUTES;
-  },
-
-  async createDispute(data: { category: string; orderId?: string; description: string }): Promise<Dispute> {
-    await new Promise((r) => setTimeout(r, 600));
-    const newDispute: Dispute = {
-      id: "DSP-" + Date.now().toString().slice(-3),
-      category: data.category,
-      orderId: data.orderId,
-      description: data.description,
-      status: "OPEN",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const stored = await AsyncStorage.getItem(STORAGE_KEYS.DISPUTES);
-    const disputes: Dispute[] = stored ? JSON.parse(stored) : [];
-    disputes.unshift(newDispute);
-    await AsyncStorage.setItem(STORAGE_KEYS.DISPUTES, JSON.stringify(disputes));
-    return newDispute;
-  },
-
-  async logout(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.AUTH_TOKEN,
-      STORAGE_KEYS.RIDER_PROFILE,
-      STORAGE_KEYS.ORDERS,
-      STORAGE_KEYS.DISPUTES,
-    ]);
-  },
-
-  async getToken(): Promise<string | null> {
-    return AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+  OUT_FOR_DELIVERY: {
+    label: "Mark as Delivered",
+    modalTitle: "Confirm Delivery",
+    modalSubtitle: "Has the order been delivered to the customer?",
+    icon: "checkmark-circle-outline",
   },
 };
+
+// ── Real backend API calls for disputes ──────────────────
+
+/** GET /api/rider/disputes — fetch rider's disputes */
+export async function fetchDisputes(): Promise<Dispute[]> {
+  try {
+    const data = await request<any[]>("GET", "/api/disputes");
+    return data.map((d: any) => ({
+      id: d.id,
+      category: d.category || "Other",
+      orderId: d.orderId,
+      description: d.description || "",
+      status: d.status || "OPEN",
+      resolution: d.resolution || undefined,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt || d.createdAt,
+    }));
+  } catch {
+    // If endpoint doesn't exist yet, return empty array
+    return [];
+  }
+}
+
+/** POST /api/disputes — create a new dispute */
+export async function createDispute(data: {
+  category: string;
+  orderId: string;
+  description: string;
+}): Promise<Dispute> {
+  return request<Dispute>("POST", "/api/disputes", data);
+}
+
+// ── Rider earnings API ───────────────────────────────────
+
+export interface EarningsEntry {
+  orderId: string;
+  leg: "PICKUP" | "DROP";
+  distanceKm: number;
+  amount: number;
+  ratePerKm: number;
+  distanceSource: string;
+  createdAt: string;
+}
+
+export interface EarningsDaySummary {
+  date: string;
+  earnings: number;
+  distanceKm: number;
+  legs: number;
+  entries: EarningsEntry[];
+}
+
+export interface RiderEarningsResponse {
+  totalEarnings: number;
+  totalDistanceKm: number;
+  totalLegs: number;
+  days: EarningsDaySummary[];
+}
+
+/** GET /api/rider/earnings — fetch rider's earnings summary */
+export async function fetchRiderEarnings(): Promise<RiderEarningsResponse> {
+  return request<RiderEarningsResponse>("GET", "/api/rider/earnings");
+}

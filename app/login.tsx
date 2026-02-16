@@ -70,7 +70,7 @@ export default function LoginScreen() {
           <View style={styles.logoCircle}>
             <Ionicons name="bicycle" size={36} color={Colors.dark.tint} />
           </View>
-          <Text style={styles.brandName}>Saaf</Text>
+          <Text style={styles.brandName}>Rinzo</Text>
           <Text style={styles.subtitle}>Delivery Partner</Text>
         </View>
 

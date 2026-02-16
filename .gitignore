@@ -39,3 +39,7 @@ yarn-error.*
 .vercel
 
 .env
+
+# Firebase (obtain from Firebase Console)
+google-services.json
+GoogleService-Info.plist

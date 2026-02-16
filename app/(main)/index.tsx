@@ -18,7 +18,8 @@ import Animated, {
   interpolateColor,
 } from "react-native-reanimated";
 import { useAuth } from "@/lib/auth-context";
-import { api, AvailabilityStatus } from "@/lib/api";
+import { AvailabilityStatus, setAvailability } from "@/lib/api";
+import { useLocationTracker } from "@/lib/use-location-tracker";
 import Colors from "@/constants/colors";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -31,6 +32,9 @@ export default function HomeScreen() {
 
   const isAvailable = rider?.availability === "AVAILABLE";
   const toggleProgress = useSharedValue(isAvailable ? 1 : 0);
+
+  // ── GPS location tracking (throttled + distance-filtered) ──
+  useLocationTracker(isAvailable);
 
   const animatedCircleStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -59,15 +63,25 @@ export default function HomeScreen() {
     setIsToggling(true);
 
     const newStatus: AvailabilityStatus = isAvailable ? "OFFLINE" : "AVAILABLE";
+    const newIsAvailable = newStatus === "AVAILABLE";
 
     try {
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
-      const updated = await api.updateAvailability(newStatus);
+
+      // Optimistically update the UI
+      const updated = { ...rider, availability: newStatus };
       updateRider(updated);
-      toggleProgress.value = withTiming(newStatus === "AVAILABLE" ? 1 : 0, { duration: 300 });
+      toggleProgress.value = withTiming(newIsAvailable ? 1 : 0, { duration: 300 });
+
+      // Persist to backend
+      await setAvailability(newIsAvailable);
     } catch {
+      // Revert on failure
+      const reverted = { ...rider, availability: isAvailable ? "AVAILABLE" : "OFFLINE" } as typeof rider;
+      updateRider(reverted);
+      toggleProgress.value = withTiming(isAvailable ? 1 : 0, { duration: 300 });
     } finally {
       setIsToggling(false);
     }

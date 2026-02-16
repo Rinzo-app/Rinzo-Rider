@@ -11,10 +11,58 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { api, DISPUTE_CATEGORIES } from "@/lib/api";
+import {
+  createDispute,
+  fetchAllRiderOrders,
+  DISPUTE_CATEGORIES,
+  Order,
+} from "@/lib/api";
 import Colors from "@/constants/colors";
+
+// ── Order picker card ────────────────────────────────────
+
+function OrderPickerCard({
+  order,
+  selected,
+  onPress,
+}: {
+  order: Order;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const date = new Date(order.createdAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
+  return (
+    <Pressable
+      style={[styles.orderCard, selected && styles.orderCardSelected]}
+      onPress={onPress}
+    >
+      <View style={styles.orderCardRow}>
+        <View style={styles.orderCardInfo}>
+          <Text style={styles.orderShop} numberOfLines={1}>
+            {order.shopName}
+          </Text>
+          <Text style={styles.orderMeta}>
+            {date} · {order.type} · {order.status}
+          </Text>
+        </View>
+        <Ionicons
+          name={selected ? "checkmark-circle" : "ellipse-outline"}
+          size={22}
+          color={selected ? Colors.dark.tint : Colors.dark.textMuted}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
+// ── Main screen ──────────────────────────────────────────
 
 export default function NewDisputeScreen() {
   const insets = useSafeAreaInsets();
@@ -24,9 +72,23 @@ export default function NewDisputeScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const {
+    data: orders = [],
+    isLoading: ordersLoading,
+    isError: ordersError,
+  } = useQuery<Order[]>({
+    queryKey: ["all-rider-orders"],
+    queryFn: fetchAllRiderOrders,
+    staleTime: 60_000,
+  });
+
   async function handleSubmit() {
     if (!category) {
       setError("Please select a category");
+      return;
+    }
+    if (!orderId) {
+      setError("Please select an order");
       return;
     }
     if (!description.trim()) {
@@ -37,9 +99,9 @@ export default function NewDisputeScreen() {
     setIsSubmitting(true);
 
     try {
-      await api.createDispute({
+      await createDispute({
         category,
-        orderId: orderId.trim() || undefined,
+        orderId,
         description: description.trim(),
       });
       if (Platform.OS !== "web") {
@@ -81,6 +143,7 @@ export default function NewDisputeScreen() {
           </View>
         )}
 
+        {/* ── Category picker ── */}
         <View style={styles.field}>
           <Text style={styles.label}>Category</Text>
           <View style={styles.categoriesGrid}>
@@ -111,22 +174,55 @@ export default function NewDisputeScreen() {
           </View>
         </View>
 
+        {/* ── Order picker ── */}
         <View style={styles.field}>
-          <Text style={styles.label}>Order ID (optional)</Text>
-          <View style={styles.inputWrapper}>
-            <Ionicons name="link-outline" size={18} color={Colors.dark.textMuted} style={{ marginRight: 8 }} />
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. ORD-7842"
-              placeholderTextColor={Colors.dark.textMuted}
-              value={orderId}
-              onChangeText={setOrderId}
-              autoCapitalize="characters"
-              editable={!isSubmitting}
-            />
-          </View>
+          <Text style={styles.label}>Order</Text>
+
+          {ordersLoading && (
+            <View style={styles.orderLoadingBox}>
+              <ActivityIndicator size="small" color={Colors.dark.tint} />
+              <Text style={styles.orderLoadingText}>Loading orders…</Text>
+            </View>
+          )}
+
+          {ordersError && (
+            <View style={styles.orderEmptyBox}>
+              <Ionicons name="warning-outline" size={20} color={Colors.dark.danger} />
+              <Text style={styles.orderEmptyText}>
+                Failed to load orders. Pull down to retry.
+              </Text>
+            </View>
+          )}
+
+          {!ordersLoading && !ordersError && orders.length === 0 && (
+            <View style={styles.orderEmptyBox}>
+              <Ionicons name="cube-outline" size={20} color={Colors.dark.textMuted} />
+              <Text style={styles.orderEmptyText}>
+                No orders found — you can only create disputes for orders you've been assigned to.
+              </Text>
+            </View>
+          )}
+
+          {!ordersLoading && !ordersError && orders.length > 0 && (
+            <View style={styles.orderList}>
+              {orders.map((o) => (
+                <OrderPickerCard
+                  key={o.id}
+                  order={o}
+                  selected={orderId === o.id}
+                  onPress={() => {
+                    setOrderId(o.id === orderId ? "" : o.id);
+                    if (Platform.OS !== "web") {
+                      Haptics.selectionAsync();
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
+        {/* ── Description ── */}
         <View style={styles.field}>
           <Text style={styles.label}>Description</Text>
           <TextInput
@@ -235,21 +331,74 @@ const styles = StyleSheet.create({
   categoryChipTextSelected: {
     color: Colors.dark.tint,
   },
-  inputWrapper: {
+  // ── Order picker styles ──
+  orderLoadingBox: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
     backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     paddingHorizontal: 14,
+    paddingVertical: 18,
   },
-  input: {
-    flex: 1,
+  orderLoadingText: {
     fontFamily: "Inter_400Regular",
-    fontSize: 15,
+    fontSize: 14,
+    color: Colors.dark.textMuted,
+  },
+  orderEmptyBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+  },
+  orderEmptyText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    flex: 1,
+  },
+  orderList: {
+    gap: 8,
+  },
+  orderCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  orderCardSelected: {
+    backgroundColor: "rgba(0, 212, 170, 0.08)",
+    borderColor: Colors.dark.tint,
+  },
+  orderCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  orderCardInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  orderShop: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
     color: Colors.dark.text,
-    paddingVertical: 14,
+  },
+  orderMeta: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textMuted,
   },
   textArea: {
     backgroundColor: Colors.dark.surface,

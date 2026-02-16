@@ -13,7 +13,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { api, Dispute, DisputeStatus } from "@/lib/api";
+import { fetchDisputes, Dispute, DisputeStatus } from "@/lib/api";
 import Colors from "@/constants/colors";
 
 const STATUS_CONFIG: Record<DisputeStatus, { label: string; color: string; bg: string; icon: string }> = {
@@ -85,9 +85,9 @@ export default function SupportScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
-  const fetchDisputes = useCallback(async () => {
+  const loadDisputes = useCallback(async () => {
     try {
-      const data = await api.getDisputes();
+      const data = await fetchDisputes();
       setDisputes(data);
     } catch {
     } finally {
@@ -98,13 +98,13 @@ export default function SupportScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchDisputes();
-    }, [fetchDisputes])
+      loadDisputes();
+    }, [loadDisputes])
   );
 
   async function handleRefresh() {
     setIsRefreshing(true);
-    await fetchDisputes();
+    await loadDisputes();
   }
 
   function handleNewDispute() {

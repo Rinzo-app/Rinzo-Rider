@@ -18,6 +18,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "list.clipboard", selected: "list.clipboard.fill" }} />
         <Label>Orders</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="wallet">
+        <Icon sf={{ default: "wallet.bifold", selected: "wallet.bifold.fill" }} />
+        <Label>Wallet</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="support">
         <Icon sf={{ default: "questionmark.circle", selected: "questionmark.circle.fill" }} />
         <Label>Support</Label>
@@ -75,6 +79,15 @@ function ClassicTabLayout() {
           title: "Orders",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "list" : "list-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: "Wallet",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
           ),
         }}
       />
