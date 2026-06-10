@@ -81,22 +81,20 @@ export async function request<T = any>(
     // Backend errors are nested: { error: { code, message } }
     const body = raw?.error && typeof raw.error === "object" ? raw.error : raw;
 
-    // Only 401 (bad/expired token) or a suspended account should log the
-    // user out. Plain 403s are business-rule denials (wrong order state,
-    // not assigned to this order, etc.) and must not end the session.
-    const isAuthFailure =
-      res.status === 401 ||
-      (res.status === 403 && body.code === "ERR_SUSPENDED");
-
-    if (isAuthFailure) {
+    // Only 401 (bad/expired token) logs the user out. Suspended accounts
+    // stay signed in — /api/auth/me still works for them, and the
+    // status-blocked screen needs the session to poll for reinstatement.
+    // Plain 403s are business-rule denials and must not end the session.
+    if (res.status === 401) {
       await forceSignOut();
       throw new ApiError(
         res.status,
-        body.code === "ERR_SUSPENDED"
-          ? "Your account has been suspended"
-          : "Authentication failed — please login again",
+        "Authentication failed — please login again",
         body.code,
       );
+    }
+    if (res.status === 403 && body.code === "ERR_SUSPENDED") {
+      throw new ApiError(res.status, "Your account has been suspended", body.code);
     }
 
     throw new ApiError(
@@ -133,7 +131,7 @@ export async function requestRaw(
 
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    if (res.status === 401 || text.includes("ERR_SUSPENDED")) {
+    if (res.status === 401) {
       await forceSignOut();
     }
     throw new ApiError(res.status, text);
