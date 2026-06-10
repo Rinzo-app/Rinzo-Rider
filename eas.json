@@ -4,9 +4,17 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://rinzo-backend.onrender.com",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBbN4y2Vnj3QLTMhjfwG3X_5DPP7232saE",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "rinzo-prod-54e65.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "rinzo-prod-54e65"
+      }
+    },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
-      "environment": "production",
       "android": {
         "buildType": "apk"
       },
@@ -15,8 +23,8 @@
       }
     },
     "production": {
-      "autoIncrement": true,
-      "environment": "production"
+      "extends": "base",
+      "autoIncrement": true
     }
   }
 }
