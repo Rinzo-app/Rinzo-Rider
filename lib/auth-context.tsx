@@ -23,6 +23,7 @@ import { BACKEND_URL } from "./config";
 import type { RiderProfile } from "@/lib/api";
 import { fetchRiderProfile as fetchRiderProfileFromApi } from "@/lib/api";
 import { ConfigErrorScreen } from "@/components/ConfigErrorScreen";
+import { registerForPushNotifications } from "./push-notifications";
 
 // ── Startup config validation ────────────────────────────
 // Check once at module level so the error screen is deterministic
@@ -169,6 +170,8 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
             setRider(buildPlaceholderProfile(firebaseUser));
             // Fetch the real profile from backend
             await syncProfileFromBackend();
+            // Register this device for push notifications (never throws)
+            registerForPushNotifications();
           } else {
             setRider(null);
             setProfileError(null);
