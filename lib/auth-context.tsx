@@ -10,7 +10,13 @@ import React, {
 } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import { fetch } from "expo/fetch";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut,
+} from "firebase/auth";
 import { isFirebaseConfigured, firebaseReady, getFirebaseAuth } from "./firebase";
 import { queryClient } from "./query-client";
 import { BACKEND_URL } from "./config";
@@ -46,6 +52,13 @@ interface AuthContextValue {
   /** Non-null when the backend profile fetch failed after login */
   profileError: string | null;
   login: (email: string, password: string) => Promise<void>;
+  register: (
+    name: string,
+    phone: string,
+    vehicleType: string,
+    email: string,
+    password: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   /** Retry fetching the profile after a failure */
@@ -56,10 +69,13 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * Auto-register with the unified backend on first login.
- * 409 = already registered — safe to ignore.
+ * Register with the unified backend. 409 = already registered.
+ * Returns true when the account exists in the backend afterwards.
  */
-async function registerWithBackend(idToken: string, user: any) {
+async function registerWithBackend(
+  idToken: string,
+  payload: { name: string; email: string; phone: string; vehicleType: string },
+): Promise<boolean> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/register/rider`, {
       method: "POST",
@@ -67,19 +83,14 @@ async function registerWithBackend(idToken: string, user: any) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${idToken}`,
       },
-      body: JSON.stringify({
-        name: user.displayName || user.email?.split("@")[0] || "Rider",
-        email: user.email || "",
-        phone: user.phoneNumber || "",
-        vehicleType: "Motorcycle",
-      }),
+      body: JSON.stringify(payload),
     });
-    if (!res.ok && res.status !== 409) {
-      console.warn("Backend rider registration:", res.status);
-    }
+    if (res.ok || res.status === 409) return true;
+    console.warn("Backend rider registration:", res.status);
+    return false;
   } catch (err) {
-    // Non-fatal — user may already be registered
-    console.warn("Backend rider registration failed (non-fatal):", err);
+    console.warn("Backend rider registration failed:", err);
+    return false;
   }
 }
 
@@ -206,11 +217,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
         );
       }
 
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-
-      // Obtain the ID token immediately and register with backend
-      const idToken = await cred.user.getIdToken();
-      await registerWithBackend(idToken, cred.user);
+      await signInWithEmailAndPassword(auth, email, password);
 
       // Fetch the real rider profile from the backend
       // (onAuthStateChanged also fires, but we fetch here to
@@ -235,6 +242,63 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
         throw err;
       }
       throw new Error("Sign in failed. Please try again");
+    }
+  }
+
+  // ── Email / password sign-up ────────────────────────────
+  async function register(
+    name: string,
+    phone: string,
+    vehicleType: string,
+    email: string,
+    password: string,
+  ) {
+    setIsLoading(true);
+    setProfileError(null);
+    try {
+      await firebaseReady;
+      const auth = getFirebaseAuth();
+      if (!auth) {
+        throw new Error(
+          "Unable to initialise the sign-in service. Please try again later or contact support.",
+        );
+      }
+
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(cred.user, { displayName: name }).catch(() => {});
+
+      const idToken = await cred.user.getIdToken();
+      const registered = await registerWithBackend(idToken, {
+        name,
+        email,
+        phone,
+        vehicleType,
+      });
+      if (!registered) {
+        // Roll back the orphaned Firebase account so the user can retry
+        await cred.user.delete().catch(() => {});
+        throw new Error("REGISTRATION_FAILED");
+      }
+
+      await syncProfileFromBackend();
+    } catch (err: any) {
+      setIsLoading(false);
+      const code = err?.code || "";
+      if (code === "auth/email-already-in-use") {
+        throw new Error("An account with this email already exists — sign in instead");
+      } else if (code === "auth/weak-password") {
+        throw new Error("Password is too weak — use at least 6 characters");
+      } else if (code === "auth/invalid-email") {
+        throw new Error("Please enter a valid email");
+      } else if (code === "auth/network-request-failed") {
+        throw new Error("Network error. Please check your connection and try again");
+      } else if (err?.message === "REGISTRATION_FAILED") {
+        throw new Error("Could not create your account. Please try again");
+      }
+      if (err?.message?.startsWith("Unable to initialise")) {
+        throw err;
+      }
+      throw new Error("Sign up failed. Please try again");
     }
   }
 
@@ -283,6 +347,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       isAuthenticated: !!rider,
       profileError,
       login,
+      register,
       logout,
       refreshProfile,
       retryProfileFetch,

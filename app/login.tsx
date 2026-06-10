@@ -17,26 +17,41 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
 
+const VEHICLE_TYPES = ["Motorcycle", "Scooter", "Bicycle", "Car"];
+
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [vehicleType, setVehicleType] = useState(VEHICLE_TYPES[0]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const isSignup = mode === "signup";
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
-  async function handleLogin() {
+  async function handleSubmit() {
     if (!email.trim() || !password.trim()) {
       setError("Please enter your email and password");
+      return;
+    }
+    if (isSignup && (!name.trim() || phone.trim().length < 4)) {
+      setError("Please enter your name and phone number");
       return;
     }
     setError("");
     setIsSubmitting(true);
     try {
-      await login(email.trim(), password);
+      if (isSignup) {
+        await register(name.trim(), phone.trim(), vehicleType, email.trim(), password);
+      } else {
+        await login(email.trim(), password);
+      }
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -79,6 +94,53 @@ export default function LoginScreen() {
             <View style={styles.errorBox}>
               <Ionicons name="alert-circle" size={18} color={Colors.dark.danger} />
               <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {isSignup && (
+            <View style={styles.inputWrapper}>
+              <Ionicons name="person-outline" size={20} color={Colors.dark.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Your name"
+                placeholderTextColor={Colors.dark.textMuted}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                editable={!isSubmitting}
+              />
+            </View>
+          )}
+
+          {isSignup && (
+            <View style={styles.inputWrapper}>
+              <Ionicons name="call-outline" size={20} color={Colors.dark.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Phone number"
+                placeholderTextColor={Colors.dark.textMuted}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                editable={!isSubmitting}
+              />
+            </View>
+          )}
+
+          {isSignup && (
+            <View style={styles.vehicleRow}>
+              {VEHICLE_TYPES.map((v) => (
+                <Pressable
+                  key={v}
+                  style={[styles.vehicleChip, vehicleType === v && styles.vehicleChipActive]}
+                  onPress={() => setVehicleType(v)}
+                  disabled={isSubmitting}
+                >
+                  <Text style={[styles.vehicleChipText, vehicleType === v && styles.vehicleChipTextActive]}>
+                    {v}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           )}
 
@@ -127,19 +189,33 @@ export default function LoginScreen() {
               pressed && styles.loginButtonPressed,
               isSubmitting && styles.loginButtonDisabled,
             ]}
-            onPress={handleLogin}
+            onPress={handleSubmit}
             disabled={isSubmitting}
           >
             {isSubmitting ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
+              <Text style={styles.loginButtonText}>{isSignup ? "Create Account" : "Sign In"}</Text>
             )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => { setMode(isSignup ? "signin" : "signup"); setError(""); }}
+            disabled={isSubmitting}
+            hitSlop={8}
+          >
+            <Text style={styles.switchModeText}>
+              {isSignup
+                ? "Already have an account? Sign in"
+                : "New rider? Create your account"}
+            </Text>
           </Pressable>
         </View>
 
         <Text style={styles.footerText}>
-          Contact your manager for account access
+          {isSignup
+            ? "Your account needs admin approval before you can start delivering"
+            : "Sign in to start delivering"}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -241,6 +317,38 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 16,
     color: "#0D0F14",
+  },
+  switchModeText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: Colors.dark.tint,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  vehicleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  vehicleChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  vehicleChipActive: {
+    borderColor: Colors.dark.tint,
+    backgroundColor: Colors.dark.surfaceElevated,
+  },
+  vehicleChipText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+  },
+  vehicleChipTextActive: {
+    color: Colors.dark.tint,
   },
   footerText: {
     fontFamily: "Inter_400Regular",
