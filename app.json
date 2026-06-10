@@ -48,8 +48,9 @@
         "origin": "https://rinzo.app"
       },
       "eas": {
-        "projectId": "c89509ff-82fc-47be-a565-ff922aa1c00d"
+        "projectId": "15084131-29b8-417d-9843-02ecb4b886f9"
       }
-    }
+    },
+    "owner": "rinzoadmin"
   }
 }
