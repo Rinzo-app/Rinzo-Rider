@@ -77,7 +77,9 @@ export async function request<T = any>(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: res.statusText }));
+    const raw = await res.json().catch(() => ({ message: res.statusText }));
+    // Backend errors are nested: { error: { code, message } }
+    const body = raw?.error && typeof raw.error === "object" ? raw.error : raw;
 
     // Only 401 (bad/expired token) or a suspended account should log the
     // user out. Plain 403s are business-rule denials (wrong order state,
