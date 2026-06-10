@@ -22,8 +22,20 @@ const REQUIRED_VARS = [
   'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
 ] as const;
 
+// EXPO_PUBLIC_* vars must be referenced STATICALLY — Metro inlines
+// literal `process.env.EXPO_PUBLIC_X` expressions into release
+// bundles; dynamic `process.env[key]` access is undefined there.
+const RAW_ENV: Record<string, string | undefined> = {
+  EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+};
+
 function getEnv(key: string): string | undefined {
-  const value = process.env[key];
+  const value = RAW_ENV[key];
   return value && value.trim().length > 0 ? value.trim() : undefined;
 }
 
