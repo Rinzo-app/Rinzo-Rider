@@ -5,7 +5,15 @@ import {
   initializeAuth,
   getReactNativePersistence,
 } from 'firebase/auth';
+import type { Persistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// getReactNativePersistence is exported at runtime via Metro's
+// react-native-specific entry point but missing from the default
+// TypeScript declarations.  This augmentation bridges the gap.
+declare module 'firebase/auth' {
+  export function getReactNativePersistence(storage: unknown): Persistence;
+}
 
 // ── Required Firebase env vars ──
 const REQUIRED_VARS = [

@@ -51,7 +51,7 @@ async function forceSignOut(): Promise<void> {
  * Make an authenticated request to the backend.
  *
  * - Attaches the Firebase ID token as a Bearer header.
- * - On 401/403 responses, signs the user out and throws.
+ * - On 401 (or suspended-account 403), signs the user out and throws.
  * - Returns the parsed JSON body on success.
  *
  * @param method  HTTP method (GET, POST, PUT, DELETE, etc.)
@@ -79,12 +79,20 @@ export async function request<T = any>(
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
 
-    // Force logout on auth failures so the user is redirected to login
-    if (res.status === 401 || res.status === 403) {
+    // Only 401 (bad/expired token) or a suspended account should log the
+    // user out. Plain 403s are business-rule denials (wrong order state,
+    // not assigned to this order, etc.) and must not end the session.
+    const isAuthFailure =
+      res.status === 401 ||
+      (res.status === 403 && body.code === "ERR_SUSPENDED");
+
+    if (isAuthFailure) {
       await forceSignOut();
       throw new ApiError(
         res.status,
-        "Authentication failed — please login again",
+        body.code === "ERR_SUSPENDED"
+          ? "Your account has been suspended"
+          : "Authentication failed — please login again",
         body.code,
       );
     }
@@ -122,10 +130,10 @@ export async function requestRaw(
   });
 
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
+    const text = (await res.text()) || res.statusText;
+    if (res.status === 401 || text.includes("ERR_SUSPENDED")) {
       await forceSignOut();
     }
-    const text = (await res.text()) || res.statusText;
     throw new ApiError(res.status, text);
   }
 
