@@ -40,8 +40,12 @@ export default function LoginScreen() {
       setError("Please enter your email and password");
       return;
     }
-    if (isSignup && (!name.trim() || phone.trim().length < 4)) {
-      setError("Please enter your name and phone number");
+    if (isSignup && !name.trim()) {
+      setError("Please enter your name");
+      return;
+    }
+    if (isSignup && !/^(\+91|0)?[6-9]\d{9}$/.test(phone.replace(/[\s-]/g, ""))) {
+      setError("Please enter a valid 10-digit mobile number");
       return;
     }
     setError("");

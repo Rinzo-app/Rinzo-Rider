@@ -140,6 +140,17 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       setRider(profile);
       return profile;
     } catch (err: any) {
+      // One account = one role: a 404 here means the account exists
+      // but is not a rider (customer/shop owner) — wrong app.
+      if (err?.code === "ERR_RIDER_NOT_FOUND") {
+        const auth = getFirebaseAuth();
+        if (auth) await signOut(auth).catch(() => {});
+        setRider(null);
+        setProfileError(
+          "This account is not a rider account — please use the Rinzo customer or shop owner app.",
+        );
+        return null;
+      }
       const message =
         err?.message || "Failed to load your rider profile. Please try again.";
       console.error("Backend profile fetch failed:", message);
