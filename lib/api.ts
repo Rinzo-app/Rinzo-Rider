@@ -5,7 +5,7 @@ export { ApiError } from "./http-client";
 
 export type RiderStatus = "PENDING" | "APPROVED" | "ACTIVE" | "SUSPENDED";
 export type AvailabilityStatus = "AVAILABLE" | "OFFLINE";
-export type OrderStatus = "ASSIGNED" | "PICKED_UP" | "DELIVERED";
+export type OrderStatus = "OFFERED" | "ASSIGNED" | "PICKED_UP" | "DELIVERED";
 export type DisputeStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
 
 export interface RiderProfile {
@@ -34,6 +34,8 @@ export interface Order {
   status: OrderStatus;
   /** Raw backend status — used to determine which mutation endpoint to call */
   backendStatus: string;
+  /** Deadline for accepting a pending pickup offer (PICKUP_OFFERED only) */
+  offerExpiresAt: string | null;
   distance: string;
   services: ServiceItem[];
   createdAt: string;
@@ -72,6 +74,7 @@ export const DISPUTE_CATEGORIES = [
 
 function deriveType(backendStatus: string): "PICKUP" | "DELIVERY" {
   if (
+    backendStatus === "PICKUP_OFFERED" ||
     backendStatus === "PICKUP_ASSIGNED" ||
     backendStatus === "PICKED_UP_FROM_CUSTOMER" ||
     backendStatus === "AT_SHOP"
@@ -83,6 +86,8 @@ function deriveType(backendStatus: string): "PICKUP" | "DELIVERY" {
 
 function deriveStatus(backendStatus: string): OrderStatus {
   switch (backendStatus) {
+    case "PICKUP_OFFERED":
+      return "OFFERED";
     case "PICKUP_ASSIGNED":
       return "ASSIGNED";
     case "PICKED_UP_FROM_CUSTOMER":
@@ -100,6 +105,7 @@ function deriveStatus(backendStatus: string): OrderStatus {
 
 /** Backend order statuses where the rider has active work to do */
 const ACTIVE_BACKEND_STATUSES = [
+  "PICKUP_OFFERED",
   "PICKUP_ASSIGNED",
   "PICKED_UP_FROM_CUSTOMER",
   "OUT_FOR_DELIVERY",
@@ -127,6 +133,7 @@ function mapOrder(raw: any): Order {
     type: deriveType(backendStatus),
     status: deriveStatus(backendStatus),
     backendStatus,
+    offerExpiresAt: raw.offerExpiresAt ?? null,
     distance: raw.distance || "",
     services: items,
     createdAt: raw.createdAt,
@@ -153,6 +160,17 @@ export async function fetchAllRiderOrders(): Promise<Order[]> {
 export async function fetchOrder(id: string): Promise<Order> {
   const data = await request("GET", `/api/orders/${id}`);
   return mapOrder(data);
+}
+
+/** POST /api/rider/orders/:id/accept  (PICKUP_OFFERED → PICKUP_ASSIGNED) */
+export async function acceptOffer(id: string): Promise<Order> {
+  const data = await request("POST", `/api/rider/orders/${id}/accept`);
+  return mapOrder(data);
+}
+
+/** POST /api/rider/orders/:id/decline  (PICKUP_OFFERED → back to the pool) */
+export async function declineOffer(id: string): Promise<void> {
+  await request("POST", `/api/rider/orders/${id}/decline`);
 }
 
 /** POST /api/rider/orders/:id/pickup  (PICKUP_ASSIGNED → PICKED_UP_FROM_CUSTOMER) */

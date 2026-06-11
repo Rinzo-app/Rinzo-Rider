@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import {
   OrderStatus,
   fetchOrder,
   advanceOrder,
+  acceptOffer,
+  declineOffer,
   BACKEND_NEXT_ACTION,
   ApiError,
 } from "@/lib/api";
@@ -75,6 +77,59 @@ export default function OrderDetailScreen() {
       }
       const message =
         err instanceof ApiError ? err.message : "Something went wrong";
+      Alert.alert("Error", message);
+    },
+  });
+
+  // ── Pickup offer: accept / decline + live countdown ─────
+  const isOffer = order?.backendStatus === "PICKUP_OFFERED";
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isOffer || !order?.offerExpiresAt) {
+      setSecondsLeft(null);
+      return;
+    }
+    const deadline = new Date(order.offerExpiresAt).getTime();
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setSecondsLeft(left);
+      if (left === 0) {
+        // Offer lapsed — refetch so the screen reflects reality
+        queryClient.invalidateQueries({ queryKey: ["order", id] });
+        queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+      }
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [isOffer, order?.offerExpiresAt, id, queryClient]);
+
+  const acceptMutation = useMutation({
+    mutationFn: () => acceptOffer(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order", id] });
+      queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    },
+    onError: (err) => {
+      const message = err instanceof ApiError ? err.message : "Something went wrong";
+      Alert.alert("Offer unavailable", message);
+      queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+      router.back();
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: () => declineOffer(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+      router.back();
+    },
+    onError: (err) => {
+      const message = err instanceof ApiError ? err.message : "Something went wrong";
       Alert.alert("Error", message);
     },
   });
@@ -134,9 +189,30 @@ export default function OrderDetailScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 20) + (nextAction ? 80 : 0) },
+          { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 20) + (nextAction || isOffer ? 80 : 0) },
         ]}
       >
+        {isOffer && (
+          <View style={styles.offerBanner}>
+            <View style={styles.offerIconWrap}>
+              <Ionicons name="flash" size={20} color="#FFB020" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.offerTitle}>New pickup offer</Text>
+              <Text style={styles.offerSubtitle}>
+                {secondsLeft !== null && secondsLeft > 0
+                  ? `Accept within ${secondsLeft}s or it goes to the next rider`
+                  : "Checking offer status…"}
+              </Text>
+            </View>
+            {secondsLeft !== null && secondsLeft > 0 && (
+              <View style={styles.offerCountdown}>
+                <Text style={styles.offerCountdownText}>{secondsLeft}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.progressSection}>
           {STATUS_STEPS.map((step, index) => {
             const isCompleted = index <= currentStepIndex;
@@ -275,7 +351,58 @@ export default function OrderDetailScreen() {
         </View>
       </ScrollView>
 
-      {nextAction && (
+      {isOffer ? (
+        <View
+          style={[
+            styles.bottomBar,
+            styles.offerBar,
+            { paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 16) },
+          ]}
+        >
+          <Pressable
+            style={({ pressed }) => [
+              styles.declineButton,
+              pressed && { opacity: 0.8 },
+              declineMutation.isPending && styles.actionButtonDisabled,
+            ]}
+            onPress={() => {
+              if (Platform.OS !== "web") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }
+              declineMutation.mutate();
+            }}
+            disabled={declineMutation.isPending || acceptMutation.isPending}
+          >
+            {declineMutation.isPending ? (
+              <ActivityIndicator size="small" color={Colors.dark.danger} />
+            ) : (
+              <Text style={styles.declineButtonText}>Decline</Text>
+            )}
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.acceptButton,
+              pressed && styles.actionButtonPressed,
+              acceptMutation.isPending && styles.actionButtonDisabled,
+            ]}
+            onPress={() => {
+              if (Platform.OS !== "web") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }
+              acceptMutation.mutate();
+            }}
+            disabled={acceptMutation.isPending || declineMutation.isPending}
+          >
+            {acceptMutation.isPending ? (
+              <ActivityIndicator size="small" color="#0D0F14" />
+            ) : (
+              <Text style={styles.actionButtonText}>
+                Accept Offer{secondsLeft !== null && secondsLeft > 0 ? ` (${secondsLeft}s)` : ""}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      ) : nextAction ? (
         <View
           style={[
             styles.bottomBar,
@@ -299,7 +426,7 @@ export default function OrderDetailScreen() {
             <Text style={styles.actionButtonText}>{nextAction.label}</Text>
           </Pressable>
         </View>
-      )}
+      ) : null}
 
       <Modal
         visible={showConfirm}
@@ -646,5 +773,75 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 15,
     color: "#0D0F14",
+  },
+  offerBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(255, 176, 32, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 176, 32, 0.35)",
+    borderRadius: 16,
+    padding: 14,
+  },
+  offerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 176, 32, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    color: "#FFB020",
+  },
+  offerSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
+  },
+  offerCountdown: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: "#FFB020",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerCountdownText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 16,
+    color: "#FFB020",
+  },
+  offerBar: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: Colors.dark.tint,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  declineButton: {
+    paddingHorizontal: 22,
+    backgroundColor: "rgba(255, 75, 110, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 75, 110, 0.3)",
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  declineButtonText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 16,
+    color: Colors.dark.danger,
   },
 });

@@ -18,6 +18,11 @@ import { Order, OrderStatus, fetchRiderOrders } from "@/lib/api";
 import Colors from "@/constants/colors";
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string }> = {
+  OFFERED: {
+    label: "New Offer — respond now",
+    color: "#FFB020",
+    bg: "rgba(255, 176, 32, 0.12)",
+  },
   ASSIGNED: {
     label: "Assigned",
     color: Colors.dark.statusAssigned,
@@ -100,8 +105,9 @@ export default function OrdersScreen() {
   } = useQuery<Order[]>({
     queryKey: ["rider-orders"],
     queryFn: fetchRiderOrders,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    // Offers expire in 60s — poll fast enough to surface them in time.
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 
   function renderEmpty() {
