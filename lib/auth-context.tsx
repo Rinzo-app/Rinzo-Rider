@@ -181,12 +181,15 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
           return;
         }
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser: any) => {
+          // During registration the Firebase account exists before the
+          // backend row does — setting the rider placeholder here makes
+          // the app "authenticated" too early and queries 401 into the
+          // gap. register() owns all state updates until it completes.
+          if (firebaseUser && isRegistering.current) return;
+
           if (firebaseUser) {
             // Set a safe placeholder while the backend profile loads
             setRider(buildPlaceholderProfile(firebaseUser));
-            // During registration, register() does the fetch itself once
-            // the backend row exists — don't race it here.
-            if (isRegistering.current) return;
             await syncProfileFromBackend();
             // Register this device for push notifications (never throws)
             registerForPushNotifications();
