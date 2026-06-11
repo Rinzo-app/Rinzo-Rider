@@ -131,6 +131,11 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const appState = useRef(AppState.currentState);
+  // True while register() is mid-flight. createUserWithEmailAndPassword
+  // fires onAuthStateChanged immediately, which would fetch the profile
+  // before the backend row exists (→ 401 → destructive sign-out).
+  // register() owns the fetch in that window.
+  const isRegistering = useRef(false);
 
   // ── Fetch the real rider profile from the backend ──────
   const syncProfileFromBackend = useCallback(async () => {
@@ -179,7 +184,9 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
           if (firebaseUser) {
             // Set a safe placeholder while the backend profile loads
             setRider(buildPlaceholderProfile(firebaseUser));
-            // Fetch the real profile from backend
+            // During registration, register() does the fetch itself once
+            // the backend row exists — don't race it here.
+            if (isRegistering.current) return;
             await syncProfileFromBackend();
             // Register this device for push notifications (never throws)
             registerForPushNotifications();
@@ -269,6 +276,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   ) {
     setIsLoading(true);
     setProfileError(null);
+    isRegistering.current = true;
     try {
       await firebaseReady;
       const auth = getFirebaseAuth();
@@ -294,7 +302,10 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
         throw new Error("REGISTRATION_FAILED");
       }
 
+      // Backend row now exists — safe to fetch the profile.
       await syncProfileFromBackend();
+      registerForPushNotifications();
+      setIsLoading(false);
     } catch (err: any) {
       setIsLoading(false);
       const code = err?.code || "";
@@ -313,6 +324,8 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
         throw err;
       }
       throw new Error("Sign up failed. Please try again");
+    } finally {
+      isRegistering.current = false;
     }
   }
 
