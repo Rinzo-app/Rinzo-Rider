@@ -36,6 +36,12 @@
       ],
       "expo-font",
       "expo-notifications",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Rinzo uses your location to assign nearby pickups and calculate your delivery earnings."
+        }
+      ],
       "expo-web-browser",
       "expo-secure-store"
     ],
