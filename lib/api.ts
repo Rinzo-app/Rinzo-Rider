@@ -16,6 +16,7 @@ export interface RiderProfile {
   status: RiderStatus;
   vehicleType: string;
   vehicleNumber: string;
+  licenseNumber: string;
   availability: AvailabilityStatus;
   joinedDate: string;
   totalDeliveries: number;
@@ -185,10 +186,20 @@ export async function fetchRiderProfile(): Promise<RiderProfile> {
     status: data.status || "PENDING",
     vehicleType: data.vehicleType || "Motorcycle",
     vehicleNumber: data.vehicleNumber || "",
+    licenseNumber: data.licenseNumber || "",
     availability: data.availability || "OFFLINE",
     joinedDate: data.joinedDate || new Date().toISOString(),
     totalDeliveries: data.totalDeliveries ?? 0,
   };
+}
+
+/** PATCH /api/rider/profile — update vehicle details */
+export async function updateRiderProfile(updates: {
+  vehicleType?: string;
+  vehicleNumber?: string;
+  licenseNumber?: string;
+}): Promise<{ vehicleType: string; vehicleNumber: string; licenseNumber: string }> {
+  return request("PATCH", "/api/rider/profile", updates);
 }
 
 // ── Rider availability API ───────────────────────────────

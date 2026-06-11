@@ -110,6 +110,7 @@ function buildPlaceholderProfile(firebaseUser: any): RiderProfile {
     status: "PENDING", // safe default — backend will override
     vehicleType: "Motorcycle",
     vehicleNumber: "",
+    licenseNumber: "",
     availability: "OFFLINE",
     joinedDate: firebaseUser.metadata?.creationTime || new Date().toISOString(),
     totalDeliveries: 0,
