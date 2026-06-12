@@ -36,6 +36,10 @@ export interface Order {
   backendStatus: string;
   /** Deadline for accepting a pending pickup offer (PICKUP_OFFERED only) */
   offerExpiresAt: string | null;
+  /** COD amount to collect at delivery (paise) — null when unknown/paid */
+  codAmount: number | null;
+  /** COD payment status (PENDING / COLLECTED / SETTLED) */
+  paymentStatus: string | null;
   distance: string;
   services: ServiceItem[];
   createdAt: string;
@@ -134,6 +138,8 @@ function mapOrder(raw: any): Order {
     status: deriveStatus(backendStatus),
     backendStatus,
     offerExpiresAt: raw.offerExpiresAt ?? null,
+    codAmount: raw.payment?.method === "COD" ? raw.payment.amount : null,
+    paymentStatus: raw.payment?.status ?? null,
     distance: raw.distance || "",
     services: items,
     createdAt: raw.createdAt,
@@ -171,6 +177,11 @@ export async function acceptOffer(id: string): Promise<Order> {
 /** POST /api/rider/orders/:id/decline  (PICKUP_OFFERED → back to the pool) */
 export async function declineOffer(id: string): Promise<void> {
   await request("POST", `/api/rider/orders/${id}/decline`);
+}
+
+/** POST /api/rider/orders/:id/collect-cash — confirm COD collected (idempotent) */
+export async function collectCash(id: string): Promise<void> {
+  await request("POST", `/api/rider/orders/${id}/collect-cash`);
 }
 
 /** POST /api/rider/orders/:id/pickup  (PICKUP_ASSIGNED → PICKED_UP_FROM_CUSTOMER) */
@@ -333,6 +344,13 @@ export interface RiderEarningsResponse {
   totalDistanceKm: number;
   totalLegs: number;
   days: EarningsDaySummary[];
+  /** COD cash currently in the rider's hand (unsettled) */
+  cod?: {
+    cashInHand: number;
+    yourCut: number;
+    handOver: number;
+    orderCount: number;
+  };
 }
 
 /** GET /api/rider/earnings — fetch rider's earnings summary */

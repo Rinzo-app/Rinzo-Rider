@@ -23,10 +23,12 @@ import {
   advanceOrder,
   acceptOffer,
   declineOffer,
+  collectCash,
   BACKEND_NEXT_ACTION,
   ApiError,
 } from "@/lib/api";
 import Colors from "@/constants/colors";
+import { formatMoney } from "@/lib/money";
 
 const STATUS_STEPS: { key: OrderStatus; label: string; icon: string }[] = [
   { key: "ASSIGNED", label: "Assigned", icon: "radio-button-on" },
@@ -54,7 +56,16 @@ export default function OrderDetailScreen() {
   });
 
   const mutation = useMutation({
-    mutationFn: () => advanceOrder(id!, order!.backendStatus),
+    mutationFn: async () => {
+      const wasDelivery = order!.backendStatus === "OUT_FOR_DELIVERY";
+      const result = await advanceOrder(id!, order!.backendStatus);
+      // COD: confirming delivery means the cash was collected —
+      // record it (idempotent server-side, never blocks the flow).
+      if (wasDelivery && order?.codAmount != null) {
+        await collectCash(id!).catch(() => {});
+      }
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["order", id] });
       queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
@@ -349,6 +360,18 @@ export default function OrderDetailScreen() {
             <Text style={styles.metaText}>{order.distance}</Text>
           </View>
         </View>
+
+        {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null && (
+          <View style={styles.codBanner}>
+            <Ionicons name="cash-outline" size={20} color="#4ADE80" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.codTitle}>Collect {formatMoney(order.codAmount)} in cash</Text>
+              <Text style={styles.codSubtitle}>
+                Cash on delivery — collect the full amount before handing over the laundry.
+              </Text>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {isOffer ? (
@@ -447,7 +470,9 @@ export default function OrderDetailScreen() {
               {nextAction?.modalTitle || "Confirm"}
             </Text>
             <Text style={styles.modalSubtitle}>
-              {nextAction?.modalSubtitle || "Are you sure?"}
+              {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null
+                ? `Collect ${formatMoney(order.codAmount)} in cash from the customer, then confirm. This records the payment as collected.`
+                : nextAction?.modalSubtitle || "Are you sure?"}
             </Text>
             <View style={styles.modalActions}>
               <Pressable
@@ -843,5 +868,26 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 16,
     color: Colors.dark.danger,
+  },
+  codBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(74, 222, 128, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 222, 128, 0.35)",
+    borderRadius: 16,
+    padding: 14,
+  },
+  codTitle: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    color: "#4ADE80",
+  },
+  codSubtitle: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
   },
 });

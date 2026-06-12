@@ -79,6 +79,33 @@ function SummaryCard({ data }: { data: RiderEarningsResponse }) {
   );
 }
 
+// ── COD cash-in-hand card ────────────────────────────────
+
+function CodCard({ cod }: { cod: NonNullable<RiderEarningsResponse["cod"]> }) {
+  if (cod.orderCount === 0) return null;
+  return (
+    <View style={styles.codCard}>
+      <View style={styles.codHeader}>
+        <Ionicons name="cash-outline" size={18} color="#4ADE80" />
+        <Text style={styles.codCardTitle}>Cash in hand · {cod.orderCount} order{cod.orderCount !== 1 ? "s" : ""}</Text>
+      </View>
+      <View style={styles.codRow}>
+        <Text style={styles.codLabel}>COD collected</Text>
+        <Text style={styles.codValue}>{formatPaise(cod.cashInHand)}</Text>
+      </View>
+      <View style={styles.codRow}>
+        <Text style={styles.codLabel}>Your cut (kept)</Text>
+        <Text style={styles.codValue}>− {formatPaise(cod.yourCut)}</Text>
+      </View>
+      <View style={styles.codDivider} />
+      <View style={styles.codRow}>
+        <Text style={styles.codHandLabel}>Hand over at settlement</Text>
+        <Text style={styles.codHandValue}>{formatPaise(cod.handOver)}</Text>
+      </View>
+    </View>
+  );
+}
+
 function SummaryItem({
   icon,
   label,
@@ -262,11 +289,12 @@ export default function WalletScreen() {
           />
         }
       >
-        {hasEarnings ? (
+        {hasEarnings || (data?.cod && data.cod.orderCount > 0) ? (
           <>
-            <SummaryCard data={data} />
+            {data && <SummaryCard data={data} />}
+            {data?.cod && <CodCard cod={data.cod} />}
             <Text style={styles.sectionTitle}>Earnings History</Text>
-            {data.days.map((day) => (
+            {data?.days.map((day) => (
               <DaySection key={day.date} day={day} />
             ))}
           </>
@@ -340,6 +368,22 @@ const styles = StyleSheet.create({
   },
 
   // ── Summary ───────────────────────────────────────
+  codCard: {
+    backgroundColor: "rgba(74, 222, 128, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(74, 222, 128, 0.3)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  codHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  codCardTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#4ADE80" },
+  codRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+  codLabel: { fontFamily: "Inter_400Regular", fontSize: 13, color: Colors.dark.textSecondary },
+  codValue: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: Colors.dark.text },
+  codDivider: { height: 1, backgroundColor: "rgba(74, 222, 128, 0.2)", marginVertical: 8 },
+  codHandLabel: { fontFamily: "Inter_700Bold", fontSize: 14, color: Colors.dark.text },
+  codHandValue: { fontFamily: "Inter_700Bold", fontSize: 18, color: "#4ADE80" },
   summaryCard: {
     backgroundColor: Colors.dark.surface,
     borderRadius: 16,
