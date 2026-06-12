@@ -61,7 +61,8 @@ export default function OrderDetailScreen() {
       const result = await advanceOrder(id!, order!.backendStatus);
       // COD: confirming delivery means the cash was collected —
       // record it (idempotent server-side, never blocks the flow).
-      if (wasDelivery && order?.codAmount != null) {
+      // Skipped entirely when the customer already paid online.
+      if (wasDelivery && order?.codAmount != null && order?.paymentStatus === "PENDING") {
         await collectCash(id!).catch(() => {});
       }
       return result;
@@ -361,13 +362,27 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
-        {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null && (
+        {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null &&
+          order.paymentStatus === "PENDING" && (
           <View style={styles.codBanner}>
             <Ionicons name="cash-outline" size={20} color="#4ADE80" />
             <View style={{ flex: 1 }}>
               <Text style={styles.codTitle}>Collect {formatMoney(order.codAmount)} in cash</Text>
               <Text style={styles.codSubtitle}>
                 Cash on delivery — collect the full amount before handing over the laundry.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {(order.paymentStatus === "COLLECTED" || order.paymentStatus === "SETTLED") &&
+          order.codAmount == null && (
+          <View style={styles.codBanner}>
+            <Ionicons name="checkmark-circle" size={20} color="#4ADE80" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.codTitle}>Paid online ✓</Text>
+              <Text style={styles.codSubtitle}>
+                Nothing to collect — just hand over the laundry.
               </Text>
             </View>
           </View>
@@ -470,8 +485,10 @@ export default function OrderDetailScreen() {
               {nextAction?.modalTitle || "Confirm"}
             </Text>
             <Text style={styles.modalSubtitle}>
-              {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null
+              {order.backendStatus === "OUT_FOR_DELIVERY" && order.codAmount != null && order.paymentStatus === "PENDING"
                 ? `Collect ${formatMoney(order.codAmount)} in cash from the customer, then confirm. This records the payment as collected.`
+                : order.backendStatus === "OUT_FOR_DELIVERY" && order.paymentStatus !== "PENDING"
+                ? "Already paid online — nothing to collect. Confirm the handover."
                 : nextAction?.modalSubtitle || "Are you sure?"}
             </Text>
             <View style={styles.modalActions}>
