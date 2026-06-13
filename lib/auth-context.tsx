@@ -15,6 +15,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
+  sendEmailVerification,
   signOut,
 } from "firebase/auth";
 import { isFirebaseConfigured, firebaseReady, getFirebaseAuth } from "./firebase";
@@ -65,6 +66,9 @@ interface AuthContextValue {
   /** Retry fetching the profile after a failure */
   retryProfileFetch: () => Promise<void>;
   updateRider: (rider: RiderProfile) => void;
+  emailVerified: boolean;
+  resendVerification: () => Promise<void>;
+  reloadEmailStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -136,6 +140,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   const [rider, setRider] = useState<RiderProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
   const appState = useRef(AppState.currentState);
   // True while register() is mid-flight. createUserWithEmailAndPassword
   // fires onAuthStateChanged immediately, which would fetch the profile
@@ -297,6 +302,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
 
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(cred.user, { displayName: name }).catch(() => {});
+      sendEmailVerification(cred.user).catch(() => {});
 
       const idToken = await cred.user.getIdToken();
       const registered = await registerWithBackend(idToken, {
@@ -376,6 +382,21 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
     setRider(updated);
   }
 
+  async function resendVerification() {
+    await firebaseReady;
+    const auth = getFirebaseAuth();
+    if (!auth?.currentUser) throw new Error("Not authenticated");
+    await sendEmailVerification(auth.currentUser);
+  }
+
+  async function reloadEmailStatus() {
+    await firebaseReady;
+    const auth = getFirebaseAuth();
+    if (!auth?.currentUser) return;
+    await auth.currentUser.reload();
+    setEmailVerified(!!auth.currentUser.emailVerified);
+  }
+
   const value = useMemo(
     () => ({
       rider,
@@ -388,8 +409,11 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       refreshProfile,
       retryProfileFetch,
       updateRider,
+      emailVerified,
+      resendVerification,
+      reloadEmailStatus,
     }),
-    [rider, isLoading, profileError],
+    [rider, isLoading, profileError, emailVerified],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

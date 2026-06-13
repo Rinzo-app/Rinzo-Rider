@@ -6,6 +6,8 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  AppState,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,9 +28,29 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { rider, updateRider } = useAuth();
+  const { rider, updateRider, emailVerified, resendVerification, reloadEmailStatus } = useAuth();
   const [isToggling, setIsToggling] = useState(false);
+  const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+
+  React.useEffect(() => {
+    reloadEmailStatus();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") reloadEmailStatus();
+    });
+    return () => sub.remove();
+  }, [reloadEmailStatus]);
+
+  const handleResendVerification = async () => {
+    setVerifyState("sending");
+    try {
+      await resendVerification();
+      setVerifyState("sent");
+    } catch {
+      setVerifyState("idle");
+      Alert.alert("Couldn't send", "Please try again in a moment.");
+    }
+  };
 
   const isAvailable = rider?.availability === "AVAILABLE";
   const toggleProgress = useSharedValue(isAvailable ? 1 : 0);
@@ -107,6 +129,29 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {rider && !emailVerified && (
+        <View style={styles.verifyBanner}>
+          <Ionicons name="mail-unread-outline" size={18} color={Colors.dark.tint} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.verifyTitle}>Verify your email</Text>
+            <Text style={styles.verifyText}>
+              {verifyState === "sent"
+                ? "Sent! Tap the link in your inbox, then reopen the app."
+                : "Verify your email so you can recover your account if you forget your password."}
+            </Text>
+          </View>
+          <Pressable
+            onPress={handleResendVerification}
+            disabled={verifyState === "sending"}
+            style={({ pressed }) => [styles.verifyBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.verifyBtnText}>
+              {verifyState === "sending" ? "…" : verifyState === "sent" ? "Resend" : "Send"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       <View style={styles.centerContent}>
         <AnimatedPressable
           style={[styles.toggleCircle, animatedCircleStyle]}
@@ -184,6 +229,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
+  verifyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(0, 212, 170, 0.10)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.tint,
+  },
+  verifyTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: Colors.dark.text },
+  verifyText: { fontFamily: "Inter_400Regular", fontSize: 12, color: Colors.dark.textSecondary, marginTop: 1 },
+  verifyBtn: { backgroundColor: Colors.dark.tint, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  verifyBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 13, color: "#0D0F14" },
   statusOnline: {
     backgroundColor: "rgba(0, 212, 170, 0.12)",
   },
