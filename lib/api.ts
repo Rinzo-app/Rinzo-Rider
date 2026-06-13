@@ -91,6 +91,7 @@ function deriveType(backendStatus: string): "PICKUP" | "DELIVERY" {
 function deriveStatus(backendStatus: string): OrderStatus {
   switch (backendStatus) {
     case "PICKUP_OFFERED":
+    case "DELIVERY_OFFERED":
       return "OFFERED";
     case "PICKUP_ASSIGNED":
       return "ASSIGNED";
@@ -112,6 +113,7 @@ const ACTIVE_BACKEND_STATUSES = [
   "PICKUP_OFFERED",
   "PICKUP_ASSIGNED",
   "PICKED_UP_FROM_CUSTOMER",
+  "DELIVERY_OFFERED",
   "OUT_FOR_DELIVERY",
 ];
 

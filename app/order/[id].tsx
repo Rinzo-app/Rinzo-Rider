@@ -112,7 +112,10 @@ export default function OrderDetailScreen() {
   });
 
   // ── Pickup offer: accept / decline + live countdown ─────
-  const isOffer = order?.backendStatus === "PICKUP_OFFERED";
+  const isOffer =
+    order?.backendStatus === "PICKUP_OFFERED" ||
+    order?.backendStatus === "DELIVERY_OFFERED";
+  const isDeliveryOffer = order?.backendStatus === "DELIVERY_OFFERED";
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   useEffect(() => {
@@ -243,7 +246,7 @@ export default function OrderDetailScreen() {
               <Ionicons name="flash" size={20} color="#FFB020" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.offerTitle}>New pickup offer</Text>
+              <Text style={styles.offerTitle}>{isDeliveryOffer ? "New delivery offer" : "New pickup offer"}</Text>
               <Text style={styles.offerSubtitle}>
                 {secondsLeft !== null && secondsLeft > 0
                   ? `Accept within ${secondsLeft}s or it goes to the next rider`
