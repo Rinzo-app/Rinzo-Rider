@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.rinzo.rider",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0D0F14",
         "foregroundImage": "./assets/images/icon.png"

@@ -56,7 +56,7 @@ function OrderCard({ order }: { order: Order }) {
       onPress={handlePress}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.orderId}>{order.id}</Text>
+        <Text style={styles.orderId}>Order #{order.id.slice(0, 8).toUpperCase()}</Text>
         <View style={[styles.badge, { backgroundColor: status.bg }]}>
           <Text style={[styles.badgeText, { color: status.color }]}>{status.label}</Text>
         </View>

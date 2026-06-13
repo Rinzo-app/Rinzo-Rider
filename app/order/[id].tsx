@@ -47,13 +47,31 @@ export default function OrderDetailScreen() {
     data: order,
     isLoading,
     isError,
+    error,
   } = useQuery<Order>({
     queryKey: ["order", id],
     queryFn: () => fetchOrder(id!),
     enabled: !!id,
     staleTime: 15_000,           // order status is time-critical
     refetchInterval: 30_000,     // poll while viewing
+    // A 403 (offer expired / reassigned) or 404 won't fix itself by
+    // retrying — fail fast and show a recovery action instead.
+    retry: (count, err) => {
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status === 403 || status === 404) return false;
+      return count < 2;
+    },
   });
+
+  // Offer expired or order reassigned while viewing → not our order anymore.
+  const lostAccess =
+    error instanceof ApiError && (error.status === 403 || error.status === 404);
+
+  function leaveToOrders() {
+    queryClient.removeQueries({ queryKey: ["order", id] });
+    queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
+    router.replace("/(main)/orders");
+  }
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -172,13 +190,28 @@ export default function OrderDetailScreen() {
     );
   }
 
+  if (lostAccess) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top + webTopInset }]}>
+        <Ionicons name="time-outline" size={48} color={Colors.dark.textMuted} />
+        <Text style={styles.errorText}>This order moved on</Text>
+        <Text style={styles.errorSub}>
+          The offer expired or the order was assigned to another rider.
+        </Text>
+        <Pressable onPress={leaveToOrders} style={styles.backLink}>
+          <Text style={styles.backLinkText}>Back to my orders</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (!order || isError) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top + webTopInset }]}>
         <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.textMuted} />
-        <Text style={styles.errorText}>Order not found</Text>
-        <Pressable onPress={() => router.back()} style={styles.backLink}>
-          <Text style={styles.backLinkText}>Go back</Text>
+        <Text style={styles.errorText}>Couldn't load this order</Text>
+        <Pressable onPress={leaveToOrders} style={styles.backLink}>
+          <Text style={styles.backLinkText}>Back to my orders</Text>
         </Pressable>
       </View>
     );
@@ -193,7 +226,7 @@ export default function OrderDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={Colors.dark.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>{order.id}</Text>
+        <Text style={styles.headerTitle}>Order #{order.id.slice(0, 8).toUpperCase()}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -554,12 +587,21 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   errorText: {
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Inter_600SemiBold",
     fontSize: 16,
+    color: Colors.dark.text,
+  },
+  errorSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
     color: Colors.dark.textSecondary,
+    textAlign: "center",
+    paddingHorizontal: 32,
+    marginTop: 4,
   },
   backLink: {
     padding: 8,
+    marginTop: 4,
   },
   backLinkText: {
     fontFamily: "Inter_500Medium",
