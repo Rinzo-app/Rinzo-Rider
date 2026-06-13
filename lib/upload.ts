@@ -27,3 +27,23 @@ export async function uploadRiderDocument(
   await uploadBytes(objectRef, blob, { contentType: "image/jpeg" });
   return getDownloadURL(objectRef);
 }
+
+/**
+ * Upload a proof-of-delivery photo for an order to
+ * `delivery-proofs/{uid}/{orderId}.jpg` and return its download URL.
+ */
+export async function uploadDeliveryProof(
+  orderId: string,
+  localUri: string,
+): Promise<string> {
+  const storage = getFirebaseStorage();
+  const uid = getFirebaseAuth()?.currentUser?.uid;
+  if (!storage || !uid) {
+    throw new Error("Not signed in — please log in again before uploading.");
+  }
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  const objectRef = ref(storage, `delivery-proofs/${uid}/${orderId}.jpg`);
+  await uploadBytes(objectRef, blob, { contentType: "image/jpeg" });
+  return getDownloadURL(objectRef);
+}

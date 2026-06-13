@@ -44,7 +44,14 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rinzo needs photo access so you can attach your documents and a proof-of-delivery photo.",
+          "cameraPermission": "Rinzo uses the camera to take a proof-of-delivery photo at handover."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

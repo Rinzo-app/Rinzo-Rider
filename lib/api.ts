@@ -210,8 +210,15 @@ export async function markDropoff(id: string): Promise<Order> {
 }
 
 /** POST /api/rider/orders/:id/deliver  (OUT_FOR_DELIVERY → DELIVERED) */
-export async function markDelivery(id: string): Promise<Order> {
-  const data = await request("POST", `/api/rider/orders/${id}/deliver`);
+export async function markDelivery(
+  id: string,
+  deliveryProofUrl?: string,
+): Promise<Order> {
+  const data = await request(
+    "POST",
+    `/api/rider/orders/${id}/deliver`,
+    deliveryProofUrl ? { deliveryProofUrl } : undefined,
+  );
   return mapOrder(data);
 }
 

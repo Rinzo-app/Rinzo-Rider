@@ -10,11 +10,13 @@ import {
   Modal,
   Linking,
   Alert,
+  Image,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Order,
@@ -24,9 +26,11 @@ import {
   acceptOffer,
   declineOffer,
   collectCash,
+  markDelivery,
   BACKEND_NEXT_ACTION,
   ApiError,
 } from "@/lib/api";
+import { uploadDeliveryProof } from "@/lib/upload";
 import Colors from "@/constants/colors";
 import { formatMoney } from "@/lib/money";
 
@@ -41,6 +45,8 @@ export default function OrderDetailScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [proofUri, setProofUri] = useState<string | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   const {
@@ -76,12 +82,26 @@ export default function OrderDetailScreen() {
   const mutation = useMutation({
     mutationFn: async () => {
       const wasDelivery = order!.backendStatus === "OUT_FOR_DELIVERY";
-      const result = await advanceOrder(id!, order!.backendStatus);
-      // COD: confirming delivery means the cash was collected —
-      // record it (idempotent server-side, never blocks the flow).
-      // Skipped entirely when the customer already paid online.
-      if (wasDelivery && order?.codAmount != null && order?.paymentStatus === "PENDING") {
-        await collectCash(id!).catch(() => {});
+      let result;
+      if (wasDelivery) {
+        // Upload the optional proof-of-delivery photo first, then deliver.
+        let proofUrl: string | undefined;
+        if (proofUri) {
+          try {
+            proofUrl = await uploadDeliveryProof(id!, proofUri);
+          } catch {
+            // Photo upload shouldn't block the handover — deliver anyway.
+          }
+        }
+        result = await markDelivery(id!, proofUrl);
+        // COD: confirming delivery means the cash was collected —
+        // record it (idempotent server-side, never blocks the flow).
+        // Skipped entirely when the customer already paid online.
+        if (order?.codAmount != null && order?.paymentStatus === "PENDING") {
+          await collectCash(id!).catch(() => {});
+        }
+      } else {
+        result = await advanceOrder(id!, order!.backendStatus);
       }
       return result;
     },
@@ -89,6 +109,7 @@ export default function OrderDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ["order", id] });
       queryClient.invalidateQueries({ queryKey: ["rider-orders"] });
       setShowConfirm(false);
+      setProofUri(null);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -179,6 +200,29 @@ export default function OrderDetailScreen() {
   async function handleStatusUpdate() {
     if (!order) return;
     mutation.mutate();
+  }
+
+  async function handleTakeProof() {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Camera needed", "Allow camera access to take a delivery photo.");
+      return;
+    }
+    setUploadingProof(true);
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.6,
+        allowsEditing: false,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setProofUri(result.assets[0].uri);
+      }
+    } finally {
+      setUploadingProof(false);
+    }
   }
 
   function getStatusIndex(status: OrderStatus): number {
@@ -527,6 +571,29 @@ export default function OrderDetailScreen() {
                 ? "Already paid online — nothing to collect. Confirm the handover."
                 : nextAction?.modalSubtitle || "Are you sure?"}
             </Text>
+
+            {order.backendStatus === "OUT_FOR_DELIVERY" && (
+              <Pressable
+                style={({ pressed }) => [styles.proofButton, pressed && { opacity: 0.85 }]}
+                onPress={handleTakeProof}
+                disabled={uploadingProof || isUpdating}
+              >
+                {uploadingProof ? (
+                  <ActivityIndicator size="small" color={Colors.dark.tint} />
+                ) : proofUri ? (
+                  <>
+                    <Image source={{ uri: proofUri }} style={styles.proofThumb} />
+                    <Text style={styles.proofButtonText}>Photo added — retake</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={18} color={Colors.dark.tint} />
+                    <Text style={styles.proofButtonText}>Add delivery photo (optional)</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+
             <View style={styles.modalActions}>
               <Pressable
                 style={({ pressed }) => [styles.modalCancel, pressed && { opacity: 0.7 }]}
@@ -829,6 +896,25 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
+  proofButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 14,
+    backgroundColor: "rgba(0, 212, 170, 0.10)",
+    borderWidth: 1,
+    borderColor: Colors.dark.tint,
+  },
+  proofButtonText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: Colors.dark.tint,
+  },
+  proofThumb: { width: 32, height: 32, borderRadius: 6 },
   modalActions: {
     flexDirection: "row",
     gap: 12,
