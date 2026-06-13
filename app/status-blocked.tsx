@@ -29,6 +29,8 @@ export default function StatusBlockedScreen() {
   const appState = useRef(AppState.currentState);
 
   const isPending = rider?.status === "PENDING";
+  const docStatus = rider?.documentsStatus ?? "NOT_SUBMITTED";
+  const docsNeedAction = docStatus === "NOT_SUBMITTED" || docStatus === "REJECTED";
 
   // ── Auto-redirect when status is no longer blocked ─────
   useEffect(() => {
@@ -129,9 +131,38 @@ export default function StatusBlockedScreen() {
 
         <Text style={styles.description}>
           {isPending
-            ? "Your rider account is being reviewed. You will be able to access the app once your account is approved."
+            ? docsNeedAction
+              ? "To activate your account, please upload your driving licence, vehicle RC and a selfie for verification."
+              : "Your documents are under review. You'll be able to access the app once your account is approved."
             : "Your account has been suspended. Please contact support for more information."}
         </Text>
+
+        {isPending && docsNeedAction && (
+          <Pressable
+            style={({ pressed }) => [styles.docButton, pressed && styles.pressed]}
+            onPress={() => {
+              if (Platform.OS !== "web") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }
+              router.push("/documents" as any);
+            }}
+          >
+            <Ionicons name="cloud-upload-outline" size={18} color="#0D0F14" />
+            <Text style={styles.docButtonText}>
+              {docStatus === "REJECTED" ? "Resubmit Documents" : "Upload Documents"}
+            </Text>
+          </Pressable>
+        )}
+
+        {isPending && !docsNeedAction && (
+          <Pressable
+            style={({ pressed }) => [styles.checkButton, pressed && styles.pressed]}
+            onPress={() => router.push("/documents" as any)}
+          >
+            <Ionicons name="document-text-outline" size={18} color={Colors.dark.tint} />
+            <Text style={styles.checkButtonText}>View Documents</Text>
+          </Pressable>
+        )}
 
         {isPending && (
           <Pressable
@@ -222,6 +253,23 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 15,
     color: Colors.dark.textSecondary,
+  },
+  docButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    backgroundColor: Colors.dark.tint,
+    marginTop: 8,
+    minWidth: 200,
+  },
+  docButtonText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    color: "#0D0F14",
   },
   checkButton: {
     flexDirection: "row",

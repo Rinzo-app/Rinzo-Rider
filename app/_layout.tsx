@@ -18,6 +18,10 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="login" />
       <Stack.Screen name="status-blocked" />
+      <Stack.Screen
+        name="documents"
+        options={{ animation: "slide_from_right" }}
+      />
       <Stack.Screen name="(main)" />
       <Stack.Screen
         name="order/[id]"

@@ -114,6 +114,11 @@ function buildPlaceholderProfile(firebaseUser: any): RiderProfile {
     availability: "OFFLINE",
     joinedDate: firebaseUser.metadata?.creationTime || new Date().toISOString(),
     totalDeliveries: 0,
+    dlImageUrl: null,
+    rcImageUrl: null,
+    selfieUrl: null,
+    documentsStatus: "NOT_SUBMITTED",
+    documentsRejectionReason: null,
   };
 }
 

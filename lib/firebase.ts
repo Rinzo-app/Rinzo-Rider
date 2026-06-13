@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { initializeApp, getApps } from 'firebase/app';
+import { getStorage } from 'firebase/storage';
 import {
   getAuth,
   initializeAuth,
@@ -86,6 +87,11 @@ const firebaseReady = Promise.resolve(initFirebase());
 
 export function getFirebaseAuth() {
   return firebaseAuth;
+}
+
+export function getFirebaseStorage() {
+  if (!firebaseApp) return null;
+  return getStorage(firebaseApp);
 }
 
 export { firebaseReady };

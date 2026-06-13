@@ -20,7 +20,18 @@ export interface RiderProfile {
   availability: AvailabilityStatus;
   joinedDate: string;
   totalDeliveries: number;
+  dlImageUrl: string | null;
+  rcImageUrl: string | null;
+  selfieUrl: string | null;
+  documentsStatus: DocumentsStatus;
+  documentsRejectionReason: string | null;
 }
+
+export type DocumentsStatus =
+  | "NOT_SUBMITTED"
+  | "SUBMITTED"
+  | "VERIFIED"
+  | "REJECTED";
 
 export interface Order {
   id: string;
@@ -221,7 +232,21 @@ export async function fetchRiderProfile(): Promise<RiderProfile> {
     availability: data.availability || "OFFLINE",
     joinedDate: data.joinedDate || new Date().toISOString(),
     totalDeliveries: data.totalDeliveries ?? 0,
+    dlImageUrl: data.dlImageUrl ?? null,
+    rcImageUrl: data.rcImageUrl ?? null,
+    selfieUrl: data.selfieUrl ?? null,
+    documentsStatus: data.documentsStatus || "NOT_SUBMITTED",
+    documentsRejectionReason: data.documentsRejectionReason ?? null,
   };
+}
+
+/** PATCH /api/rider/documents — submit KYC document download URLs */
+export async function submitDocuments(urls: {
+  dlImageUrl?: string;
+  rcImageUrl?: string;
+  selfieUrl?: string;
+}): Promise<{ documentsStatus: DocumentsStatus }> {
+  return request("PATCH", "/api/rider/documents", urls);
 }
 
 /** PATCH /api/rider/profile — update vehicle details */

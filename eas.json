@@ -9,7 +9,8 @@
         "EXPO_PUBLIC_BACKEND_URL": "https://rinzo-backend.onrender.com",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBbN4y2Vnj3QLTMhjfwG3X_5DPP7232saE",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "rinzo-prod-54e65.firebaseapp.com",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "rinzo-prod-54e65"
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "rinzo-prod-54e65",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "rinzo-prod-54e65.firebasestorage.app"
       }
     },
     "preview": {
