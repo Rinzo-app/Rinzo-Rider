@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/lib/auth-context";
-import { updateRiderProfile } from "@/lib/api";
+import { updateRiderProfile, deleteAccount } from "@/lib/api";
 import Colors from "@/constants/colors";
 
 const VEHICLE_TYPES = ["Motorcycle", "Scooter", "Bicycle", "Car"];
@@ -105,6 +105,26 @@ export default function ProfileScreen() {
     ]);
   }
 
+  function handleDeleteAccount() {
+    const run = async () => {
+      try {
+        await deleteAccount();
+        await logout();
+        router.replace("/login");
+      } catch (e: any) {
+        Alert.alert("Couldn't delete", e?.message || "Please try again.");
+      }
+    };
+    Alert.alert(
+      "Delete account?",
+      "This permanently deletes your account and personal data and cannot be undone. Deliveries in progress must be completed first.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: run },
+      ],
+    );
+  }
+
   const joinDate = rider?.joinedDate
     ? new Date(rider.joinedDate).toLocaleDateString("en-US", {
         year: "numeric",
@@ -170,6 +190,10 @@ export default function ProfileScreen() {
         >
           <Ionicons name="log-out-outline" size={20} color={Colors.dark.danger} />
           <Text style={styles.logoutText}>Sign Out</Text>
+        </Pressable>
+
+        <Pressable style={styles.deleteButton} onPress={handleDeleteAccount}>
+          <Text style={styles.deleteText}>Delete account</Text>
         </Pressable>
       </ScrollView>
 
@@ -342,6 +366,17 @@ const styles = StyleSheet.create({
   },
   logoutPressed: {
     opacity: 0.7,
+  },
+  deleteButton: {
+    alignItems: "center",
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  deleteText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    textDecorationLine: "underline",
   },
   logoutText: {
     fontFamily: "Inter_600SemiBold",

@@ -222,6 +222,11 @@ export async function markDelivery(
   return mapOrder(data);
 }
 
+/** DELETE /api/auth/me — permanently delete the signed-in account */
+export async function deleteAccount(): Promise<void> {
+  await request("DELETE", "/api/auth/me");
+}
+
 // ── Rider profile API ────────────────────────────────────
 
 /** GET /api/rider/profile — fetch rider's real profile from backend */
