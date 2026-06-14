@@ -28,7 +28,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { rider, updateRider, emailVerified, resendVerification, reloadEmailStatus } = useAuth();
+  const { rider, updateRider, emailVerified, emailChecked, resendVerification, reloadEmailStatus } = useAuth();
   const [isToggling, setIsToggling] = useState(false);
   const [verifyState, setVerifyState] = useState<"idle" | "sending" | "sent">("idle");
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -134,7 +134,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {rider && !emailVerified && (
+      {rider && emailChecked && !emailVerified && (
         <View style={styles.verifyBanner}>
           <Ionicons name="mail-unread-outline" size={18} color={Colors.dark.tint} />
           <View style={{ flex: 1 }}>

@@ -69,6 +69,9 @@ interface AuthContextValue {
   retryProfileFetch: () => Promise<void>;
   updateRider: (rider: RiderProfile) => void;
   emailVerified: boolean;
+  /** False until the verification status has been determined — avoids a
+   *  flash of the "verify email" banner before the check resolves. */
+  emailChecked: boolean;
   resendVerification: () => Promise<void>;
   reloadEmailStatus: () => Promise<void>;
 }
@@ -143,6 +146,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [emailChecked, setEmailChecked] = useState(false);
   const appState = useRef(AppState.currentState);
   // True while register() is mid-flight. createUserWithEmailAndPassword
   // fires onAuthStateChanged immediately, which would fetch the profile
@@ -201,6 +205,10 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
           if (firebaseUser && isRegistering.current) return;
 
           if (firebaseUser) {
+            // Seed verification from the (persisted) Firebase user so the
+            // banner doesn't flash before reloadEmailStatus resolves.
+            setEmailVerified(!!firebaseUser.emailVerified);
+            setEmailChecked(true);
             // Set a safe placeholder while the backend profile loads
             setRider(buildPlaceholderProfile(firebaseUser));
             await syncProfileFromBackend();
@@ -209,6 +217,8 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
           } else {
             setRider(null);
             setProfileError(null);
+            setEmailVerified(false);
+            setEmailChecked(false);
           }
           setIsLoading(false);
         });
@@ -408,6 +418,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       await auth.currentUser.getIdToken(true).catch(() => {});
     }
     setEmailVerified(!!auth.currentUser.emailVerified);
+    setEmailChecked(true);
   }
 
   const value = useMemo(
@@ -424,10 +435,11 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       retryProfileFetch,
       updateRider,
       emailVerified,
+      emailChecked,
       resendVerification,
       reloadEmailStatus,
     }),
-    [rider, isLoading, profileError, emailVerified],
+    [rider, isLoading, profileError, emailVerified, emailChecked],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
