@@ -16,6 +16,7 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
 import { isFirebaseConfigured, firebaseReady, getFirebaseAuth } from "./firebase";
@@ -61,6 +62,7 @@ interface AuthContextValue {
     email: string,
     password: string,
   ) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   /** Retry fetching the profile after a failure */
@@ -382,6 +384,13 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
     setRider(updated);
   }
 
+  async function resetPassword(email: string) {
+    await firebaseReady;
+    const auth = getFirebaseAuth();
+    if (!auth) throw new Error("Firebase is not configured");
+    await sendPasswordResetEmail(auth, email);
+  }
+
   async function resendVerification() {
     await firebaseReady;
     const auth = getFirebaseAuth();
@@ -409,6 +418,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
       profileError,
       login,
       register,
+      resetPassword,
       logout,
       refreshProfile,
       retryProfileFetch,

@@ -9,6 +9,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +22,7 @@ const VEHICLE_TYPES = ["Motorcycle", "Scooter", "Bicycle", "Car"];
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login, register } = useAuth();
+  const { login, register, resetPassword } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -34,6 +35,27 @@ export default function LoginScreen() {
 
   const isSignup = mode === "signup";
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+
+  async function handleForgotPassword() {
+    const e = email.trim();
+    if (e.length < 4 || !e.includes("@")) {
+      setError("Enter your email above, then tap “Forgot password?”");
+      return;
+    }
+    try {
+      await resetPassword(e);
+    } catch (err: any) {
+      if (err?.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
+        return;
+      }
+    }
+    setError("");
+    Alert.alert(
+      "Check your email",
+      `If an account exists for ${e}, we've sent a password-reset link. Check spam too.`,
+    );
+  }
 
   async function handleSubmit() {
     if (!email.trim() || !password.trim()) {
@@ -203,6 +225,12 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
+          {!isSignup && (
+            <Pressable onPress={handleForgotPassword} disabled={isSubmitting} hitSlop={8}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </Pressable>
+          )}
+
           <Pressable
             onPress={() => { setMode(isSignup ? "signin" : "signup"); setError(""); }}
             disabled={isSubmitting}
@@ -328,6 +356,13 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
     textAlign: "center",
     marginTop: 10,
+  },
+  forgotText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    marginTop: 8,
   },
   vehicleRow: {
     flexDirection: "row",
