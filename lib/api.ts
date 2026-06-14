@@ -41,6 +41,11 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  /** Coordinates for in-app map navigation (null if not captured). */
+  shopLat: number | null;
+  shopLng: number | null;
+  customerLat: number | null;
+  customerLng: number | null;
   type: "PICKUP" | "DELIVERY";
   status: OrderStatus;
   /** Raw backend status — used to determine which mutation endpoint to call */
@@ -147,6 +152,10 @@ function mapOrder(raw: any): Order {
     customerName: raw.customerName || "Customer",
     customerPhone: raw.customerPhone || "",
     customerAddress: raw.customerAddress || raw.pickupAddress || "",
+    shopLat: raw.shopLat ?? null,
+    shopLng: raw.shopLng ?? null,
+    customerLat: raw.customerLat ?? raw.pickupLat ?? null,
+    customerLng: raw.customerLng ?? raw.pickupLng ?? null,
     type: deriveType(backendStatus),
     status: deriveStatus(backendStatus),
     backendStatus,

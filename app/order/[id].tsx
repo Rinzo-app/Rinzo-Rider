@@ -40,6 +40,32 @@ const STATUS_STEPS: { key: OrderStatus; label: string; icon: string }[] = [
   { key: "DELIVERED", label: "Delivered", icon: "checkmark-circle" },
 ];
 
+/**
+ * Open the device's maps app with turn-by-turn directions to a location.
+ * Prefers exact coordinates; falls back to a text address search.
+ */
+function openDirections(
+  lat: number | null,
+  lng: number | null,
+  fallbackAddress: string,
+) {
+  if (Platform.OS !== "web") {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+  let url: string;
+  if (lat != null && lng != null) {
+    url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  } else if (fallbackAddress?.trim()) {
+    url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fallbackAddress)}`;
+  } else {
+    Alert.alert("No location", "This order has no map location saved.");
+    return;
+  }
+  Linking.openURL(url).catch(() =>
+    Alert.alert("Couldn't open maps", "No maps app is available on this device."),
+  );
+}
+
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -361,13 +387,18 @@ export default function OrderDetailScreen() {
               </View>
             </View>
             <View style={styles.cardDivider} />
-            <View style={styles.cardRow}>
+            <Pressable
+              style={({ pressed }) => [styles.cardRow, pressed && styles.callRowPressed]}
+              onPress={() => openDirections(order.shopLat, order.shopLng, order.shopAddress)}
+            >
               <Ionicons name="location-outline" size={18} color={Colors.dark.textSecondary} />
               <View style={styles.cardRowContent}>
                 <Text style={styles.cardRowLabel}>Address</Text>
                 <Text style={styles.cardRowValue}>{order.shopAddress}</Text>
+                <Text style={styles.directionsHint}>Tap to navigate</Text>
               </View>
-            </View>
+              <Ionicons name="navigate-circle-outline" size={22} color={Colors.dark.tint} style={styles.mapIcon} />
+            </Pressable>
             <View style={styles.cardDivider} />
             <Pressable
               style={({ pressed }) => [styles.callRow, pressed && styles.callRowPressed]}
@@ -391,13 +422,18 @@ export default function OrderDetailScreen() {
               </View>
             </View>
             <View style={styles.cardDivider} />
-            <View style={styles.cardRow}>
+            <Pressable
+              style={({ pressed }) => [styles.cardRow, pressed && styles.callRowPressed]}
+              onPress={() => openDirections(order.customerLat, order.customerLng, order.customerAddress)}
+            >
               <Ionicons name="location-outline" size={18} color={Colors.dark.textSecondary} />
               <View style={styles.cardRowContent}>
                 <Text style={styles.cardRowLabel}>Address</Text>
                 <Text style={styles.cardRowValue}>{order.customerAddress}</Text>
+                <Text style={styles.directionsHint}>Tap to navigate</Text>
               </View>
-            </View>
+              <Ionicons name="navigate-circle-outline" size={22} color={Colors.dark.tint} style={styles.mapIcon} />
+            </Pressable>
             <View style={styles.cardDivider} />
             <Pressable
               style={({ pressed }) => [styles.callRow, pressed && styles.callRowPressed]}
@@ -770,6 +806,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 15,
     color: Colors.dark.text,
+  },
+  directionsHint: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    color: Colors.dark.tint,
+    marginTop: 3,
+  },
+  mapIcon: {
+    alignSelf: "center",
   },
   cardDivider: {
     height: 1,
