@@ -8,13 +8,17 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import * as WebBrowser from "expo-web-browser";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import {
   fetchRiderEarnings,
+  startSettlementPayment,
+  checkSettlementStatus,
   type RiderEarningsResponse,
   type EarningsDaySummary,
   type EarningsEntry,
@@ -81,7 +85,15 @@ function SummaryCard({ data }: { data: RiderEarningsResponse }) {
 
 // ── COD cash-in-hand card ────────────────────────────────
 
-function CodCard({ cod }: { cod: NonNullable<RiderEarningsResponse["cod"]> }) {
+function CodCard({
+  cod,
+  onPayUpi,
+  settling,
+}: {
+  cod: NonNullable<RiderEarningsResponse["cod"]>;
+  onPayUpi: () => void;
+  settling: boolean;
+}) {
   if (cod.orderCount === 0) return null;
   return (
     <View style={styles.codCard}>
@@ -99,9 +111,31 @@ function CodCard({ cod }: { cod: NonNullable<RiderEarningsResponse["cod"]> }) {
       </View>
       <View style={styles.codDivider} />
       <View style={styles.codRow}>
-        <Text style={styles.codHandLabel}>Hand over at settlement</Text>
+        <Text style={styles.codHandLabel}>Hand over to platform</Text>
         <Text style={styles.codHandValue}>{formatPaise(cod.handOver)}</Text>
       </View>
+
+      {cod.handOver > 0 && (
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.settleBtn, pressed && { opacity: 0.85 }, settling && { opacity: 0.6 }]}
+            onPress={onPayUpi}
+            disabled={settling}
+          >
+            {settling ? (
+              <ActivityIndicator size="small" color="#0D0F14" />
+            ) : (
+              <>
+                <Ionicons name="flash" size={16} color="#0D0F14" />
+                <Text style={styles.settleBtnText}>Pay {formatPaise(cod.handOver)} via UPI</Text>
+              </>
+            )}
+          </Pressable>
+          <Text style={styles.settleNote}>
+            Or hand the cash to your admin — they'll mark it settled.
+          </Text>
+        </>
+      )}
     </View>
   );
 }
@@ -241,6 +275,33 @@ export default function WalletScreen() {
     refetch();
   }, [refetch]);
 
+  const settleMutation = useMutation({
+    mutationFn: async () => {
+      const { settlementId, checkoutUrl } = await startSettlementPayment();
+      await WebBrowser.openBrowserAsync(checkoutUrl);
+      for (let i = 0; i < 5; i++) {
+        const s = await checkSettlementStatus(settlementId);
+        if (s.status !== "PENDING") return s;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return { status: "PENDING" };
+    },
+    onSuccess: (s) => {
+      refetch();
+      if (s.status === "PAID") {
+        Alert.alert("Settled ✓", "Your cash dues are cleared. Thanks!");
+      } else {
+        Alert.alert(
+          "Not confirmed yet",
+          "We couldn't confirm the payment yet. If you completed it, pull to refresh in a moment.",
+        );
+      }
+    },
+    onError: (err: Error) => {
+      Alert.alert("Couldn't start payment", err.message);
+    },
+  });
+
   // ── Loading ─────────────────────────────────────────
   if (isLoading) {
     return (
@@ -292,7 +353,13 @@ export default function WalletScreen() {
         {hasEarnings || (data?.cod && data.cod.orderCount > 0) ? (
           <>
             {data && <SummaryCard data={data} />}
-            {data?.cod && <CodCard cod={data.cod} />}
+            {data?.cod && (
+              <CodCard
+                cod={data.cod}
+                onPayUpi={() => settleMutation.mutate()}
+                settling={settleMutation.isPending}
+              />
+            )}
             <Text style={styles.sectionTitle}>Earnings History</Text>
             {data?.days.map((day) => (
               <DaySection key={day.date} day={day} />
@@ -384,6 +451,24 @@ const styles = StyleSheet.create({
   codDivider: { height: 1, backgroundColor: "rgba(74, 222, 128, 0.2)", marginVertical: 8 },
   codHandLabel: { fontFamily: "Inter_700Bold", fontSize: 14, color: Colors.dark.text },
   codHandValue: { fontFamily: "Inter_700Bold", fontSize: 18, color: "#4ADE80" },
+  settleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#4ADE80",
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginTop: 14,
+  },
+  settleBtnText: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#0D0F14" },
+  settleNote: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    marginTop: 8,
+  },
   summaryCard: {
     backgroundColor: Colors.dark.surface,
     borderRadius: 16,

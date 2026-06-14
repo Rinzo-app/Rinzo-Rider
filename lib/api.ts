@@ -227,6 +227,32 @@ export async function deleteAccount(): Promise<void> {
   await request("DELETE", "/api/auth/me");
 }
 
+// ── COD settlement (rider pays the platform what they owe) ──
+
+export interface SettlementInfo {
+  cashInHand: number;
+  yourCut: number;
+  handOver: number;
+  orderCount: number;
+  paymentIds: string[];
+  pendingSettlement: { id: string } | null;
+}
+
+/** GET /api/rider/settlement — current dues */
+export async function fetchSettlementInfo(): Promise<SettlementInfo> {
+  return request("GET", "/api/rider/settlement");
+}
+
+/** POST /api/rider/settlement/pay — start a UPI settlement, returns checkout URL */
+export async function startSettlementPayment(): Promise<{ settlementId: string; checkoutUrl: string }> {
+  return request("POST", "/api/rider/settlement/pay");
+}
+
+/** GET /api/rider/settlement/:id/status — poll the settlement after the gateway */
+export async function checkSettlementStatus(id: string): Promise<{ status: string }> {
+  return request("GET", `/api/rider/settlement/${id}/status`);
+}
+
 // ── Rider profile API ────────────────────────────────────
 
 /** GET /api/rider/profile — fetch rider's real profile from backend */
