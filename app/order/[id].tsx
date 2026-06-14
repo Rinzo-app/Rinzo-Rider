@@ -624,10 +624,15 @@ export default function OrderDetailScreen() {
                 ) : (
                   <>
                     <Ionicons name="camera-outline" size={18} color={Colors.dark.tint} />
-                    <Text style={styles.proofButtonText}>Add delivery photo (optional)</Text>
+                    <Text style={styles.proofButtonText}>Take delivery photo (required)</Text>
                   </>
                 )}
               </Pressable>
+            )}
+            {order.backendStatus === "OUT_FOR_DELIVERY" && !proofUri && (
+              <Text style={styles.proofRequiredHint}>
+                A photo at handover is required to confirm delivery.
+              </Text>
             )}
 
             <View style={styles.modalActions}>
@@ -641,10 +646,10 @@ export default function OrderDetailScreen() {
                 style={({ pressed }) => [
                   styles.modalConfirm,
                   pressed && { opacity: 0.85 },
-                  isUpdating && { opacity: 0.6 },
+                  (isUpdating || (order.backendStatus === "OUT_FOR_DELIVERY" && !proofUri)) && { opacity: 0.5 },
                 ]}
                 onPress={handleStatusUpdate}
-                disabled={isUpdating}
+                disabled={isUpdating || (order.backendStatus === "OUT_FOR_DELIVERY" && !proofUri)}
               >
                 {isUpdating ? (
                   <ActivityIndicator size="small" color="#0D0F14" />
@@ -960,6 +965,14 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
   },
   proofThumb: { width: 32, height: 32, borderRadius: 6 },
+  proofRequiredHint: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    marginBottom: 14,
+    marginTop: -6,
+  },
   modalActions: {
     flexDirection: "row",
     gap: 12,
