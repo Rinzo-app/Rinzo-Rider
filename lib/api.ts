@@ -59,6 +59,9 @@ export interface Order {
   distance: string;
   services: ServiceItem[];
   createdAt: string;
+  /** Rider-reported delay (null if none reported). */
+  delayReason: string | null;
+  delayReportedAt: string | null;
 }
 
 export interface ServiceItem {
@@ -165,6 +168,8 @@ function mapOrder(raw: any): Order {
     distance: raw.distance || "",
     services: items,
     createdAt: raw.createdAt,
+    delayReason: raw.delayReason ?? null,
+    delayReportedAt: raw.delayReportedAt ?? null,
   };
 }
 
@@ -204,6 +209,28 @@ export async function declineOffer(id: string): Promise<void> {
 /** POST /api/rider/orders/:id/collect-cash — confirm COD collected (idempotent) */
 export async function collectCash(id: string): Promise<void> {
   await request("POST", `/api/rider/orders/${id}/collect-cash`);
+}
+
+/** Reasons a rider can report a delay (mirrors the backend enum). */
+export const DELAY_REASONS = [
+  { value: "TRAFFIC", label: "Heavy traffic / road block" },
+  { value: "BREAKDOWN", label: "Vehicle breakdown" },
+  { value: "ACCIDENT", label: "Accident" },
+  { value: "CUSTOMER_UNREACHABLE", label: "Can't reach customer" },
+  { value: "OTHER", label: "Other" },
+] as const;
+
+/** POST /api/rider/orders/:id/report-delay — flag a genuine delay to the team. */
+export async function reportDelay(
+  id: string,
+  reason: string,
+  note?: string,
+): Promise<Order> {
+  const data = await request("POST", `/api/rider/orders/${id}/report-delay`, {
+    reason,
+    ...(note ? { note } : {}),
+  });
+  return mapOrder(data);
 }
 
 /** POST /api/rider/orders/:id/pickup  (PICKUP_ASSIGNED → PICKED_UP_FROM_CUSTOMER) */

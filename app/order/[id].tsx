@@ -11,6 +11,7 @@ import {
   Linking,
   Alert,
   Image,
+  TextInput,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +28,8 @@ import {
   declineOffer,
   collectCash,
   markDelivery,
+  reportDelay,
+  DELAY_REASONS,
   BACKEND_NEXT_ACTION,
   ApiError,
 } from "@/lib/api";
@@ -73,6 +76,9 @@ export default function OrderDetailScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [showDelay, setShowDelay] = useState(false);
+  const [delayReason, setDelayReason] = useState<string | null>(null);
+  const [delayNote, setDelayNote] = useState("");
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   const {
@@ -213,6 +219,33 @@ export default function OrderDetailScreen() {
       Alert.alert("Error", message);
     },
   });
+
+  const reportDelayMutation = useMutation({
+    mutationFn: () => reportDelay(id!, delayReason!, delayNote.trim() || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order", id] });
+      setShowDelay(false);
+      setDelayReason(null);
+      setDelayNote("");
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      Alert.alert(
+        "Thanks — we've let the team know",
+        "Your order won't be reassigned automatically. Support can see the delay and will help if needed.",
+      );
+    },
+    onError: (err) => {
+      const message = err instanceof ApiError ? err.message : "Something went wrong";
+      Alert.alert("Couldn't report delay", message);
+    },
+  });
+
+  // A rider can report a delay while actively carrying out a leg.
+  const canReportDelay =
+    order?.backendStatus === "PICKUP_ASSIGNED" ||
+    order?.backendStatus === "PICKED_UP_FROM_CUSTOMER" ||
+    order?.backendStatus === "OUT_FOR_DELIVERY";
 
   const isUpdating = mutation.isPending;
 
@@ -503,6 +536,26 @@ export default function OrderDetailScreen() {
             </View>
           </View>
         )}
+
+        {order.delayReportedAt ? (
+          <View style={styles.delayReportedBanner}>
+            <Ionicons name="alert-circle" size={20} color="#FFB020" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.delayReportedTitle}>Delay reported</Text>
+              <Text style={styles.delayReportedSub}>
+                Support has been notified. This order won't be auto-reassigned.
+              </Text>
+            </View>
+          </View>
+        ) : canReportDelay ? (
+          <Pressable
+            style={({ pressed }) => [styles.reportDelayBtn, pressed && { opacity: 0.8 }]}
+            onPress={() => setShowDelay(true)}
+          >
+            <Ionicons name="warning-outline" size={18} color={Colors.dark.textSecondary} />
+            <Text style={styles.reportDelayText}>Running late? Report a delay</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       {isOffer ? (
@@ -655,6 +708,80 @@ export default function OrderDetailScreen() {
                   <ActivityIndicator size="small" color="#0D0F14" />
                 ) : (
                   <Text style={styles.modalConfirmText}>Confirm</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Report-a-delay modal ──────────────────────────── */}
+      <Modal
+        visible={showDelay}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDelay(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Report a delay</Text>
+            <Text style={styles.modalSubtitle}>
+              Let the team know what's holding you up. Your order won't be
+              reassigned and support can help if needed.
+            </Text>
+
+            <View style={styles.reasonList}>
+              {DELAY_REASONS.map((r) => {
+                const selected = delayReason === r.value;
+                return (
+                  <Pressable
+                    key={r.value}
+                    style={[styles.reasonChip, selected && styles.reasonChipActive]}
+                    onPress={() => setDelayReason(r.value)}
+                  >
+                    <Ionicons
+                      name={selected ? "radio-button-on" : "radio-button-off"}
+                      size={18}
+                      color={selected ? Colors.dark.tint : Colors.dark.textMuted}
+                    />
+                    <Text style={[styles.reasonText, selected && styles.reasonTextActive]}>
+                      {r.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <TextInput
+              style={styles.noteInput}
+              value={delayNote}
+              onChangeText={setDelayNote}
+              placeholder="Add a note (optional)"
+              placeholderTextColor={Colors.dark.textMuted}
+              multiline
+              maxLength={280}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={({ pressed }) => [styles.modalCancel, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowDelay(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalConfirm,
+                  pressed && { opacity: 0.85 },
+                  (!delayReason || reportDelayMutation.isPending) && { opacity: 0.5 },
+                ]}
+                onPress={() => reportDelayMutation.mutate()}
+                disabled={!delayReason || reportDelayMutation.isPending}
+              >
+                {reportDelayMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#0D0F14" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Submit</Text>
                 )}
               </Pressable>
             </View>
@@ -972,6 +1099,72 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 14,
     marginTop: -6,
+  },
+  reportDelayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surface,
+  },
+  reportDelayText: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+  },
+  delayReportedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(255, 176, 32, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 176, 32, 0.35)",
+    borderRadius: 16,
+    padding: 14,
+  },
+  delayReportedTitle: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#FFB020" },
+  delayReportedSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
+  },
+  reasonList: { width: "100%", gap: 8, marginVertical: 8 },
+  reasonChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surfaceElevated,
+  },
+  reasonChipActive: {
+    borderColor: Colors.dark.tint,
+    backgroundColor: "rgba(0, 212, 170, 0.08)",
+  },
+  reasonText: { fontFamily: "Inter_500Medium", fontSize: 14, color: Colors.dark.textSecondary, flex: 1 },
+  reasonTextActive: { color: Colors.dark.text },
+  noteInput: {
+    width: "100%",
+    minHeight: 64,
+    backgroundColor: Colors.dark.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: 12,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    color: Colors.dark.text,
+    textAlignVertical: "top",
+    marginTop: 4,
+    marginBottom: 8,
   },
   modalActions: {
     flexDirection: "row",
