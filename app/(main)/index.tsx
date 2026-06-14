@@ -46,9 +46,14 @@ export default function HomeScreen() {
     try {
       await resendVerification();
       setVerifyState("sent");
-    } catch {
+    } catch (e: any) {
       setVerifyState("idle");
-      Alert.alert("Couldn't send", "Please try again in a moment.");
+      Alert.alert(
+        "Couldn't send",
+        e?.code === "auth/too-many-requests"
+          ? "Too many attempts. Wait a few minutes — an email may already be in your inbox (check spam)."
+          : "Please try again in a moment.",
+      );
     }
   };
 
