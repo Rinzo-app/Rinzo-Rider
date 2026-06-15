@@ -166,6 +166,16 @@ export default function ProfileScreen() {
             label="Total Deliveries"
             value={String(rider?.totalDeliveries || 0)}
           />
+          <View style={styles.divider} />
+          <InfoRow
+            icon="star-outline"
+            label="Rating"
+            value={
+              (rider?.totalRatings ?? 0) > 0
+                ? `${(rider?.rating ?? 0).toFixed(1)} ★ (${rider?.totalRatings})`
+                : "No ratings yet"
+            }
+          />
         </View>
 
         <View style={styles.card}>

@@ -123,6 +123,8 @@ function buildPlaceholderProfile(firebaseUser: any): RiderProfile {
     availability: "OFFLINE",
     joinedDate: firebaseUser.metadata?.creationTime || new Date().toISOString(),
     totalDeliveries: 0,
+    rating: 0,
+    totalRatings: 0,
     dlImageUrl: null,
     rcImageUrl: null,
     selfieUrl: null,

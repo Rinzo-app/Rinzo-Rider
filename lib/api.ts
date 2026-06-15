@@ -20,6 +20,8 @@ export interface RiderProfile {
   availability: AvailabilityStatus;
   joinedDate: string;
   totalDeliveries: number;
+  rating: number;
+  totalRatings: number;
   dlImageUrl: string | null;
   rcImageUrl: string | null;
   selfieUrl: string | null;
@@ -306,6 +308,8 @@ export async function fetchRiderProfile(): Promise<RiderProfile> {
     availability: data.availability || "OFFLINE",
     joinedDate: data.joinedDate || new Date().toISOString(),
     totalDeliveries: data.totalDeliveries ?? 0,
+    rating: data.rating ?? 0,
+    totalRatings: data.totalRatings ?? 0,
     dlImageUrl: data.dlImageUrl ?? null,
     rcImageUrl: data.rcImageUrl ?? null,
     selfieUrl: data.selfieUrl ?? null,
